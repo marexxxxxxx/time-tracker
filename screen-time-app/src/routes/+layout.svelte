@@ -32,11 +32,9 @@
     });
 </script>
 
-<div class="flex overflow-hidden">
+<div class="flex min-h-screen">
     <Sidebar />
-    <div class="flex-1 ml-[280px] flex flex-col h-screen overflow-hidden bg-background">
-        <main class="flex-1 overflow-y-auto w-full">
-            {@render children()}
-        </main>
+    <div class="flex-1 ml-[280px] flex flex-col min-h-screen">
+        {@render children()}
     </div>
 </div>
