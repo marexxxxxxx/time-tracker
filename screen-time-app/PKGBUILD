@@ -6,8 +6,8 @@ pkgdesc="A modern, minimalist time tracking dashboard built with Tauri and Svelt
 arch=('x86_64')
 url="https://github.com/marexxxxxxx/time-tracker"
 license=('MIT')
-depends=('webkit2gtk-4.1' 'gtk3' 'libappindicator-gtk3')
-makedepends=('npm' 'cargo' 'nodejs')
+depends=('webkit2gtk-4.1' 'gtk3' 'libappindicator-gtk3' 'sqlite')
+makedepends=('npm' 'cargo' 'nodejs' 'sqlite' 'pkgconf')
 source=("git+https://github.com/marexxxxxxx/time-tracker.git")
 sha256sums=('SKIP')
 

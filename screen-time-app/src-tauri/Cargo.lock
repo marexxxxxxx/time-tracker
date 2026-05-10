@@ -3392,6 +3392,7 @@ name = "screen-time-app"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "libsqlite3-sys",
  "serde",
  "serde_json",
  "sqlx",
