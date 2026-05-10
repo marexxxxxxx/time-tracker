@@ -1,0 +1,13 @@
+package-lock.json
+package.json
+postcss.config.js
+src-tauri
+src
+static
+svelte.config.js
+tailwind.config.js
+tsconfig.json
+vite.config.js
+time-tracker
+pkg
+PKGBUILD
