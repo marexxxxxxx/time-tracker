@@ -1,7 +1,8 @@
 use std::process::Command;
 use std::time::Duration;
 use chrono::Utc;
-use sqlx::SqlitePool;
+use rusqlite::{Connection, params};
+use std::sync::{Arc, Mutex};
 use tokio::time::interval;
 
 #[derive(Debug, Clone)]
@@ -10,7 +11,7 @@ struct WindowInfo {
     title: String,
 }
 
-pub fn start_window_tracking(pool: SqlitePool) {
+pub fn start_window_tracking(conn: Arc<Mutex<Option<Connection>>>) {
     tauri::async_runtime::spawn(async move {
         let mut interval = interval(Duration::from_secs(3));
         let mut current_window: Option<WindowInfo> = None;
@@ -38,12 +39,14 @@ pub fn start_window_tracking(pool: SqlitePool) {
                             let now = Utc::now();
                             let duration = (now - current_start).num_seconds();
 
-                            let _ = sqlx::query("UPDATE activities SET end_time = ?, duration = ? WHERE id = ?")
-                                .bind(now.to_rfc3339())
-                                .bind(duration)
-                                .bind(id)
-                                .execute(&pool)
-                                .await;
+                            if let Ok(mut db_guard) = conn.lock() {
+                                if let Some(db) = db_guard.as_mut() {
+                                    let _ = db.execute(
+                                        "UPDATE activities SET end_time = ?1, duration = ?2 WHERE id = ?3",
+                                        params![now.to_rfc3339(), duration, id]
+                                    );
+                                }
+                            }
                         }
                     }
                     _ => {
@@ -53,22 +56,28 @@ pub fn start_window_tracking(pool: SqlitePool) {
                         current_window = Some(active.clone());
 
                         // Insert new record
-                        if let Ok(res) = sqlx::query(
-                            "INSERT INTO activities (app_name, title, start_time, end_time, duration, category, productivity_score) VALUES (?, ?, ?, ?, ?, ?, ?)"
-                        )
-                        .bind(&active.app_name)
-                        .bind(&active.title)
-                        .bind(now.to_rfc3339())
-                        .bind(now.to_rfc3339())
-                        .bind(0)
-                        .bind(&category)
-                        .bind(score)
-                        .execute(&pool)
-                        .await {
-                            current_id = Some(res.last_insert_rowid());
-                        } else {
-                            current_id = None;
+                        let mut inserted_id = None;
+
+                        if let Ok(mut db_guard) = conn.lock() {
+                            if let Some(db) = db_guard.as_mut() {
+                                if let Ok(_) = db.execute(
+                                    "INSERT INTO activities (app_name, title, start_time, end_time, duration, category, productivity_score) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                                    params![
+                                        &active.app_name,
+                                        &active.title,
+                                        now.to_rfc3339(),
+                                        now.to_rfc3339(),
+                                        0,
+                                        &category,
+                                        score
+                                    ]
+                                ) {
+                                    inserted_id = Some(db.last_insert_rowid());
+                                }
+                            }
                         }
+
+                        current_id = inserted_id;
                     }
                 }
             } else {
