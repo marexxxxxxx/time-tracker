@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>marexxxxxxx.screen-time-app</id>
+
+  <name>ScreenTime Dashboard</name>
+  <summary>A modern, minimalist Linux desktop application to analyze screen time</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <description>
+    <p>
+      ScreenTime Dashboard is a productivity tool to analyze your screen time, track productivity, and manage app limits.
+      It features a visual summary of daily usage, detailed insights into deep work sessions, an app blocker, automatic window tracking, and idle detection.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">marexxxxxxx.screen-time-app.desktop</launchable>
+
+  <screenshots>
+    <!-- Placeholder, Flathub requires at least one screenshot -->
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/DEIN-BENUTZERNAME/screen-time-app/main/demo.webm</image>
+      <caption>ScreenTime Dashboard interface</caption>
+    </screenshot>
+  </screenshots>
+
+  <url type="homepage">https://github.com/DEIN-BENUTZERNAME/screen-time-app</url>
+  <url type="bugtracker">https://github.com/DEIN-BENUTZERNAME/screen-time-app/issues</url>
+
+  <developer_name>marexxxxxxx</developer_name>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="0.1.0" date="2023-10-25">
+      <description>
+        <p>Initial release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

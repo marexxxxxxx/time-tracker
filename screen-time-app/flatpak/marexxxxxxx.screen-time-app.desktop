@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=ScreenTime Dashboard
+Comment=A modern, minimalist Linux desktop application to analyze screen time, track productivity, and manage app limits.
+Exec=screen-time-app %U
+Terminal=false
+Type=Application
+Icon=marexxxxxxx.screen-time-app
+Categories=Utility;
+Keywords=screen;time;productivity;dashboard;
+StartupWMClass=screen-time-app

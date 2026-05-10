@@ -1,0 +1,87 @@
+app-id: marexxxxxxx.screen-time-app
+runtime: org.gnome.Platform
+runtime-version: '46'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.node20
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node20/bin
+  env:
+    CARGO_HOME: /run/build/screen-time-app/cargo
+    NPM_CONFIG_CACHE: /run/build/screen-time-app/flatpak-node/npm-cache
+    # Needed for Tauri
+    WEBKIT_DISABLE_COMPOSITING_MODE: '1'
+
+command: screen-time-app
+
+finish-args:
+  # Display
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  # Sound
+  - --socket=pulseaudio
+  # Network (needed for updates/downloads if applicable)
+  - --share=network
+  # System tray/dbus (needed for idle detection and appindicator)
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --talk-name=org.freedesktop.ScreenSaver
+  - --system-talk-name=org.freedesktop.login1
+  # Background tracking (xdotool/hyprctl might need more permissions, but let's give standard session access)
+  - --talk-name=org.freedesktop.Flatpak
+
+modules:
+  - name: xdotool
+    buildsystem: simple
+    build-commands:
+      - make
+      - make install PREFIX=/app
+    sources:
+      - type: archive
+        url: https://github.com/micha/xdotool/releases/download/v3.20211022.1/xdotool-3.20211022.1.tar.gz
+        sha256: e8dbdfa600c0f8dfd495764d935f83c18c460d37e28f0907e59b20b72f10b7ee
+
+  - name: screen-time-app
+    buildsystem: simple
+    build-commands:
+      # Flatpak generators provide the offline cache via variables or standard paths.
+      # For Node (flatpak-node-generator), we use npm ci --offline or npm install --offline.
+      - npm install --offline
+      # We just build the frontend normally
+      - npm run build
+
+      # Build the rust backend using cargo
+      # We need to tell cargo to be completely offline
+      - cargo build --release --offline --manifest-path src-tauri/Cargo.toml
+
+      # Install the binary
+      - install -Dm755 src-tauri/target/release/screen-time-app -t /app/bin/
+
+      # Install Desktop file
+      - install -Dm644 marexxxxxxx.screen-time-app.desktop /app/share/applications/marexxxxxxx.screen-time-app.desktop
+
+      # Install Icon
+      - install -Dm644 marexxxxxxx.screen-time-app.png /app/share/icons/hicolor/512x512/apps/marexxxxxxx.screen-time-app.png
+
+      # Install AppStream Metainfo
+      - install -Dm644 marexxxxxxx.screen-time-app.metainfo.xml /app/share/metainfo/marexxxxxxx.screen-time-app.metainfo.xml
+
+    sources:
+      # The main code (using official way from remote)
+      - type: git
+        url: https://github.com/DEIN-BENUTZERNAME/screen-time-app.git
+        branch: main
+      # Local files required for the flatpak build
+      - type: file
+        path: marexxxxxxx.screen-time-app.desktop
+      - type: file
+        path: marexxxxxxx.screen-time-app.png
+      - type: file
+        path: marexxxxxxx.screen-time-app.metainfo.xml
+      # Node dependencies
+      - node-sources.json
+      # Cargo dependencies
+      - cargo-sources.json
