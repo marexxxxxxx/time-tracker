@@ -1,8 +1,12 @@
 use std::process::Command;
 use std::time::Duration;
-use chrono::Utc;
-use sqlx::SqlitePool;
+use chrono::{Utc, Timelike};
+use sqlx::{SqlitePool, Row};
 use tokio::time::interval;
+use std::collections::HashMap;
+use tauri::AppHandle;
+use tauri_plugin_notification::NotificationExt;
+use crate::quotes::get_random_quote;
 
 #[derive(Debug, Clone)]
 struct WindowInfo {
@@ -10,12 +14,15 @@ struct WindowInfo {
     title: String,
 }
 
-pub fn start_window_tracking(pool: SqlitePool) {
+pub fn start_window_tracking(pool: SqlitePool, app_handle: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut interval = interval(Duration::from_secs(3));
         let mut current_window: Option<WindowInfo> = None;
         let mut current_start = Utc::now();
         let mut current_id: Option<i64> = None;
+
+        // Track the last time we sent a notification for a specific app
+        let mut last_notifications: HashMap<String, chrono::DateTime<Utc>> = HashMap::new();
 
         loop {
             interval.tick().await;
@@ -44,6 +51,9 @@ pub fn start_window_tracking(pool: SqlitePool) {
                                 .bind(id)
                                 .execute(&pool)
                                 .await;
+
+                            // Limit checking logic
+                            check_and_notify_limit(&pool, &app_handle, &active.app_name, &mut last_notifications).await;
                         }
                     }
                     _ => {
@@ -196,4 +206,72 @@ fn get_x11_active_window() -> Option<WindowInfo> {
         }
     }
     None
+}
+
+async fn check_and_notify_limit(
+    pool: &SqlitePool,
+    app_handle: &AppHandle,
+    app_name: &str,
+    last_notifications: &mut HashMap<String, chrono::DateTime<Utc>>,
+) {
+    // 1. Check if the app has a limit configured
+    let limit_result = sqlx::query("SELECT time_limit_minutes FROM app_limits WHERE app_name = ?")
+        .bind(app_name)
+        .fetch_optional(pool)
+        .await;
+
+    if let Ok(Some(row)) = limit_result {
+        let limit_minutes: i64 = row.get(0);
+
+        // 2. Calculate today's total usage for this app
+        let now = Utc::now();
+        // Simple start of day (UTC). For a real app, you might want local time start of day.
+        let today_start = now.with_hour(0).unwrap().with_minute(0).unwrap().with_second(0).unwrap();
+
+        let usage_result = sqlx::query(
+            "SELECT SUM(duration) FROM activities WHERE app_name = ? AND start_time >= ?"
+        )
+        .bind(app_name)
+        .bind(today_start.to_rfc3339())
+        .fetch_one(pool)
+        .await;
+
+        if let Ok(row) = usage_result {
+            // SUM might return NULL if there are no records matching the condition, so we check using an Option first
+            let total_duration_seconds_opt: Option<i64> = row.get(0);
+            let total_duration_seconds = total_duration_seconds_opt.unwrap_or(0);
+
+            let total_minutes = total_duration_seconds / 60;
+
+            // 3. Check if usage exceeds limit
+            if total_minutes >= limit_minutes {
+                // 4. Check if we need to send a notification (every 5 minutes)
+                let should_notify = match last_notifications.get(app_name) {
+                    Some(last_time) => {
+                        let diff = now.signed_duration_since(*last_time);
+                        diff.num_minutes() >= 5
+                    }
+                    None => true, // First time exceeding
+                };
+
+                if should_notify {
+                    // Fetch a random quote
+                    let (quote_text, quote_author) = get_random_quote(pool).await.unwrap_or_else(|| {
+                        ("Time to take a break!".to_string(), "System".to_string())
+                    });
+
+                    // Send notification
+                    app_handle.notification()
+                        .builder()
+                        .title(format!("App Limit Reached: {}", app_name))
+                        .body(format!("\"{}\" - {}", quote_text, quote_author))
+                        .show()
+                        .unwrap_or_else(|e| eprintln!("Failed to show notification: {}", e));
+
+                    // Update last notification time
+                    last_notifications.insert(app_name.to_string(), now);
+                }
+            }
+        }
+    }
 }

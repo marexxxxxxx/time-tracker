@@ -9,6 +9,7 @@ use tokio::sync::Mutex;
 mod idle;
 mod tray;
 mod tracker;
+mod quotes;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Activity {
@@ -69,6 +70,46 @@ async fn seed_database(_app_handle: &AppHandle, pool: &sqlx::SqlitePool) -> Resu
             productivity_score INTEGER
         );
     ").execute(pool).await?;
+
+    sqlx::query("
+        CREATE TABLE IF NOT EXISTS app_limits (
+            app_name TEXT PRIMARY KEY,
+            time_limit_minutes INTEGER NOT NULL
+        );
+    ").execute(pool).await?;
+
+    sqlx::query("
+        CREATE TABLE IF NOT EXISTS quotes_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            text TEXT NOT NULL,
+            author TEXT
+        );
+    ").execute(pool).await?;
+
+    // Seed app_limits with dummy data if empty
+    let limit_count: i64 = sqlx::query("SELECT COUNT(*) FROM app_limits")
+        .fetch_one(pool)
+        .await?
+        .get(0);
+
+    if limit_count == 0 {
+        println!("Seeding app limits...");
+        let dummy_limits = vec![
+            ("YouTube", 30),
+            ("Netflix", 30),
+            ("Instagram", 15),
+            ("Discord", 60),
+            ("Unknown", 1), // useful for testing
+        ];
+
+        for (app_name, limit) in dummy_limits {
+            sqlx::query("INSERT INTO app_limits (app_name, time_limit_minutes) VALUES (?, ?)")
+                .bind(app_name)
+                .bind(limit)
+                .execute(pool)
+                .await?;
+        }
+    }
 
     // Check if table is empty
     let count: i64 = sqlx::query("SELECT COUNT(*) FROM activities")
@@ -157,6 +198,23 @@ pub fn run() {
                 );
             ",
             kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 2,
+            description: "add_app_limits_and_quotes_cache",
+            sql: "
+                CREATE TABLE IF NOT EXISTS app_limits (
+                    app_name TEXT PRIMARY KEY,
+                    time_limit_minutes INTEGER NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS quotes_cache (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    text TEXT NOT NULL,
+                    author TEXT
+                );
+            ",
+            kind: MigrationKind::Up,
         }
     ];
 
@@ -170,6 +228,7 @@ pub fn run() {
                 .build()
         )
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let app_handle = app.handle().clone();
             let app_handle_for_db = app_handle.clone();
@@ -192,8 +251,16 @@ pub fn run() {
                                 eprintln!("Failed to seed database: {}", e);
                             }
 
+                            // Fetch quotes (async background task)
+                            let pool_clone_for_quotes = pool.clone();
+                            tauri::async_runtime::spawn(async move {
+                                if let Err(e) = quotes::fetch_and_cache_quotes(&pool_clone_for_quotes).await {
+                                    eprintln!("Failed to fetch quotes: {}", e);
+                                }
+                            });
+
                             // Start Window Tracking
-                            tracker::start_window_tracking(pool.clone());
+                            tracker::start_window_tracking(pool.clone(), app_handle_for_db.clone());
 
                             // Save pool to state
                             let state: State<AppState> = app_handle_for_db.state();
