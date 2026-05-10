@@ -4,24 +4,24 @@ pkgver=0.1.0
 pkgrel=1
 pkgdesc="A modern, minimalist time tracking dashboard built with Tauri and Svelte 5"
 arch=('x86_64')
-url="https://github.com/DEIN-BENUTZERNAME/screen-time-app"
+url="https://github.com/marexxxxxxx/time-tracker"
 license=('MIT')
 depends=('webkit2gtk-4.1' 'gtk3' 'libappindicator-gtk3')
 makedepends=('npm' 'cargo' 'nodejs')
-source=("git+https://github.com/DEIN-BENUTZERNAME/screen-time-app.git")
+source=("git+https://github.com/marexxxxxxx/time-tracker.git")
 sha256sums=('SKIP')
 
 build() {
-    cd "$srcdir/$pkgname"
+    cd "$srcdir/time-tracker"
     npm install
     npm run tauri build -- --bundles deb
 }
 
 package() {
-    cd "$srcdir/$pkgname"
+    cd "$srcdir/time-tracker"
 
     # Extract the deb package built by Tauri
-    bsdtar -xf src-tauri/target/release/bundle/deb/${pkgname}_${pkgver}_${arch}.deb -C "$pkgdir"
+    bsdtar -xf src-tauri/target/release/bundle/deb/*.deb -C "$pkgdir"
     bsdtar -xf "$pkgdir/data.tar.gz" -C "$pkgdir"
 
     # Cleanup unnecessary files
