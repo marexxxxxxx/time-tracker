@@ -3,7 +3,7 @@
     export let subtitle: string = "";
 </script>
 
-<header class="fixed top-0 right-0 left-[280px] z-40 bg-surface/60 dark:bg-inverse-surface/60 backdrop-blur-2xl border-b border-outline-variant/20 dark:border-outline/20 shadow-none flex items-center justify-between px-margin-desktop py-lg w-[calc(100%-280px)] h-[80px]">
+<header class="fixed top-0 right-0 left-[280px] z-40 bg-surface/60 dark:bg-inverse-surface/60 backdrop-blur-2xl border-b border-outline-variant/20 dark:border-outline/20 shadow-none flex items-center justify-between px-margin-desktop py-lg w-[calc(100%-280px)] h-[88px]">
     <div class="flex items-center gap-md">
         <h1 class="font-headline-md text-headline-md font-bold text-on-surface dark:text-on-surface">{title}</h1>
         {#if subtitle}
@@ -11,21 +11,20 @@
         {/if}
     </div>
     <div class="flex items-center gap-md">
-        <button class="text-on-surface-variant hover:text-on-surface hover:opacity-80 transition-opacity p-sm rounded-full flex items-center justify-center">
-            <span class="material-symbols-outlined" data-icon="calendar_today">calendar_today</span>
-        </button>
-        <button class="text-on-surface-variant hover:text-on-surface hover:opacity-80 transition-opacity p-sm rounded-full flex items-center justify-center">
-            <span class="material-symbols-outlined" data-icon="tune">tune</span>
-        </button>
-        <button class="text-primary hover:opacity-80 transition-opacity font-label-md text-label-md font-semibold px-md py-sm rounded-full bg-primary/10 flex items-center gap-xs ml-sm">
-            <span class="material-symbols-outlined text-[18px]" data-icon="share">share</span>
+        <div class="flex items-center gap-sm">
+            <button class="text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low p-sm rounded-full transition-colors flex items-center justify-center">
+                <span class="material-symbols-outlined">calendar_today</span>
+            </button>
+            <button class="text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low p-sm rounded-full transition-colors flex items-center justify-center">
+                <span class="material-symbols-outlined">tune</span>
+            </button>
+        </div>
+        <button class="font-label-md text-label-md text-primary bg-primary/5 hover:bg-primary/10 px-md py-sm rounded-lg transition-colors flex items-center gap-xs">
+            <span class="material-symbols-outlined text-[18px]">share</span>
             Share
         </button>
-        <button class="bg-primary text-on-primary hover:opacity-80 transition-opacity font-label-md text-label-md font-semibold px-lg py-sm rounded-full shadow-sm ml-sm">
+        <button class="font-label-md text-label-md text-on-primary bg-primary hover:bg-surface-tint px-md py-sm rounded-lg shadow-sm transition-all">
             Add Limit
         </button>
-        <div class="w-8 h-8 rounded-full bg-surface-variant ml-sm overflow-hidden border border-outline-variant/30">
-            <!-- Avatar Placeholder -->
-        </div>
     </div>
 </header>
