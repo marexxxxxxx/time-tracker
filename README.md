@@ -1,69 +1,76 @@
----
-
-## 🏗 Installation & Nutzung
-
-Da die App aktuell auf statischem HTML und Tailwind via CDN basiert, ist keine komplexe Installation nötig:
-
-1.  **Repository klonen:**
-    ```bash
-    git clone [https://github.com/DEIN-BENUTZERNAME/screen-time-app.git](https://github.com/DEIN-BENUTZERNAME/screen-time-app.git)
-    ```
-2.  **Dateien öffnen:**
-    Öffne die `index.html` einfach in einem modernen Webbrowser deiner Wahl.
-
-> **Hinweis:** Da Tailwind CSS und die Icons über CDNs geladen werden, ist eine aktive Internetverbindung für die korrekte Darstellung erforderlich.
-
----
-
-## 📈 Geplante Erweiterungen
-
-*   [ ] **Local Storage Integration:** Speichern von eingestellten Limits im Browser.
-*   [ ] **Dark Mode Toggle:** Dynamischer Wechsel zwischen Light- und Dark-Theme.
-*   [ ] **Interaktive Charts:** Einbindung von Chart.js für echte Datenvisualisierung.
-*   [ ] **Backend-Anbindung:** Eine API zur Synchronisierung der echten Nutzungsdaten.
-
----
-
-## 📄 Lizenz
-
-Dieses Projekt ist unter der MIT-Lizenz lizenziert. Weitere Details findest du in der [LICENSE](LICENSE) Datei.
-
----
-
-Soll ich dir noch helfen, die Verknüpfungen zwischen den Seiten im Code direkt anzupassen, damit dieHier ist ein Entwurf für eine professionelle und übersichtliche `README.md`, die perfekt zu dem modernen Design deiner App passt.
-
----
-
 # 📊 ScreenTime Dashboard
 
-Ein modernes, minimalistisches Interface zur Analyse der Bildschirmzeit und Steigerung der persönlichen Produktivität. Dieses Projekt bietet ein sauberes Dashboard-Erlebnis, um Nutzungsmuster zu visualisieren, Fokus-Sitzungen zu tracken und App-Limits zu verwalten.
+A modern, minimalist Linux desktop application to analyze screen time, track productivity, and manage app limits.
+Built with **Tauri v2**, **Svelte 5**, **Tailwind CSS**, and **SQLite**.
+
+---
+
+## 🎥 Demo
+
+<video controls autoplay loop src="demo.webm" width="100%"></video>
+
+---
 
 ## 🚀 Features
 
-Das Projekt besteht aus drei Kernkomponenten, die eine nahtlose Nutzererfahrung bieten:
-
-*   **Übersichts-Dashboard:** Eine visuelle Zusammenfassung der täglichen Nutzung mit Barcharts und Kategorien-Analyse.
-*   **Productivity Tracker:** Detaillierte Einsichten in "Deep Work"-Sessions und der Vergleich zwischen produktiver Zeit und Freizeit.
-*   **App-Blocker & Limits:** Verwaltung von Einschränkungen für soziale Medien und Unterhaltungs-Apps inklusive Status-Toggles.
-
----
-
-## 🛠 Tech Stack
-
-Dieses Projekt nutzt moderne Web-Technologien für ein responsives und performantes UI:
-
-*   **HTML5:** Strukturierte semantische Inhalte.
-*   **Tailwind CSS:** Utility-first CSS-Framework für das Styling (via CDN eingebunden).
-*   **Google Fonts & Material Symbols:** Nutzung der "Inter"-Schriftart und "Material Symbols Outlined" für ein konsistentes Icon-Design.
-*   **Responsive Design:** Optimiert für Desktop und mobile Ansichten.
+*   **Overview Dashboard:** Visual summary of daily usage with faux bar charts and category breakdowns.
+*   **Productivity Tracker:** Detailed insights into "Deep Work" sessions, tracking productive vs. leisure time.
+*   **App Blocker:** Manage focus schedules (mock UI).
+*   **Automatic Window Tracking:** Live background tracking of active windows (via `xdotool`, `hyprctl`, `swaymsg`) and scoring them into categories.
+*   **Idle Detection:** Automatically detect if you are away from the keyboard and pause the timer (via `xss` for X11, DBus for GNOME/Wayland).
+*   **System Tray:** Quick access to the dashboard from your Linux tray.
 
 ---
 
-## 📂 Dateistruktur
+## 🛠 Prerequisites
 
-Damit die Navigation innerhalb der App funktioniert, sollte die Struktur wie folgt aussehen:
-```text
-/
-├── index.html          # Das Haupt-Dashboard (Overview)
-├── productivity.html   # Der Productivity Tracker
-└── blocked.html       # Die App-Blocker Verwaltung
+Make sure you have the required dependencies for Tauri on Linux:
+```bash
+sudo apt update
+sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxss-dev xdotool
+```
+
+---
+
+## 🏗 Development
+
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/DEIN-BENUTZERNAME/screen-time-app.git
+    cd screen-time-app
+    ```
+2.  **Install JS dependencies:**
+    ```bash
+    npm install
+    ```
+3.  **Run in Development Mode:**
+    ```bash
+    npm run tauri dev
+    ```
+
+---
+
+## 📦 Building & Packaging
+
+This project is configured to output both a `.deb` package and an `.AppImage`.
+
+To build the release version:
+```bash
+npm run tauri build
+```
+The output binaries will be placed in `src-tauri/target/release/bundle/`.
+
+### Arch Linux (AUR) Installation
+
+A `PKGBUILD` is provided in the repository root for users of Arch-based distributions. You can install it using `makepkg`:
+
+```bash
+cd screen-time-app
+makepkg -si
+```
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License.
