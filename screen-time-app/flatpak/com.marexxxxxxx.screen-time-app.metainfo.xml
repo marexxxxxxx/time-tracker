@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>marexxxxxxx.screen-time-app</id>
+  <id>com.marexxxxxxx.screen-time-app</id>
 
   <name>ScreenTime Dashboard</name>
   <summary>A modern, minimalist Linux desktop application to analyze screen time</summary>
@@ -15,7 +15,7 @@
     </p>
   </description>
 
-  <launchable type="desktop-id">marexxxxxxx.screen-time-app.desktop</launchable>
+  <launchable type="desktop-id">com.marexxxxxxx.screen-time-app.desktop</launchable>
 
   <screenshots>
     <!-- Placeholder, Flathub requires at least one screenshot -->

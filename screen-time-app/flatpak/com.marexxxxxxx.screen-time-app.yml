@@ -1,4 +1,4 @@
-app-id: marexxxxxxx.screen-time-app
+app-id: com.marexxxxxxx.screen-time-app
 runtime: org.gnome.Platform
 runtime-version: '46'
 sdk: org.gnome.Sdk
@@ -41,8 +41,8 @@ modules:
       - make install PREFIX=/app
     sources:
       - type: archive
-        url: https://github.com/micha/xdotool/releases/download/v3.20211022.1/xdotool-3.20211022.1.tar.gz
-        sha256: e8dbdfa600c0f8dfd495764d935f83c18c460d37e28f0907e59b20b72f10b7ee
+        url: https://github.com/jordansissel/xdotool/releases/download/v3.20211022.1/xdotool-3.20211022.1.tar.gz
+        sha256: 96f0facfde6d78eacad35b91b0f46fecd0b35e474c03e00e30da3fdd345f9ada
 
   - name: screen-time-app
     buildsystem: simple
@@ -61,26 +61,25 @@ modules:
       - install -Dm755 src-tauri/target/release/screen-time-app -t /app/bin/
 
       # Install Desktop file
-      - install -Dm644 marexxxxxxx.screen-time-app.desktop /app/share/applications/marexxxxxxx.screen-time-app.desktop
+      - install -Dm644 com.marexxxxxxx.screen-time-app.desktop /app/share/applications/com.marexxxxxxx.screen-time-app.desktop
 
       # Install Icon
-      - install -Dm644 marexxxxxxx.screen-time-app.png /app/share/icons/hicolor/512x512/apps/marexxxxxxx.screen-time-app.png
+      - install -Dm644 com.marexxxxxxx.screen-time-app.png /app/share/icons/hicolor/512x512/apps/com.marexxxxxxx.screen-time-app.png
 
       # Install AppStream Metainfo
-      - install -Dm644 marexxxxxxx.screen-time-app.metainfo.xml /app/share/metainfo/marexxxxxxx.screen-time-app.metainfo.xml
+      - install -Dm644 com.marexxxxxxx.screen-time-app.metainfo.xml /app/share/metainfo/com.marexxxxxxx.screen-time-app.metainfo.xml
 
     sources:
       # The main code (using official way from remote)
-      - type: git
-        url: https://github.com/DEIN-BENUTZERNAME/screen-time-app.git
-        branch: main
+      - type: dir
+        path: ..
       # Local files required for the flatpak build
       - type: file
-        path: marexxxxxxx.screen-time-app.desktop
+        path: com.marexxxxxxx.screen-time-app.desktop
       - type: file
-        path: marexxxxxxx.screen-time-app.png
+        path: com.marexxxxxxx.screen-time-app.png
       - type: file
-        path: marexxxxxxx.screen-time-app.metainfo.xml
+        path: com.marexxxxxxx.screen-time-app.metainfo.xml
       # Node dependencies
       - node-sources.json
       # Cargo dependencies
