@@ -7,6 +7,7 @@ arch=('x86_64')
 url="https://github.com/marexxxxxxx/time-tracker"
 license=('MIT')
 depends=('webkit2gtk-4.1' 'gtk3' 'libappindicator-gtk3' 'sqlite')
+options=('!lto')
 makedepends=('npm' 'cargo' 'nodejs' 'sqlite' 'pkgconf')
 source=("git+https://github.com/marexxxxxxx/time-tracker.git")
 sha256sums=('SKIP')
