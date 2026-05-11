@@ -73,6 +73,13 @@ modules:
       # The main code (using official way from remote)
       - type: dir
         path: ..
+        skip:
+          - pkg
+          - src-tauri/target
+          - node_modules
+          - .git
+          - flatpak/.flatpak-builder
+          - flatpak/build-dir
       # Local files required for the flatpak build
       - type: file
         path: com.marexxxxxxx.screen-time-app.desktop
