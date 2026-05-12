@@ -1,93 +1,179 @@
 app-id: com.marexxxxxxx.screen-time-app
 runtime: org.gnome.Platform
-runtime-version: '46'
+runtime-version: '47'
 sdk: org.gnome.Sdk
 sdk-extensions:
-  - org.freedesktop.Sdk.Extension.rust-stable
-  - org.freedesktop.Sdk.Extension.node20
-
+- org.freedesktop.Sdk.Extension.rust-stable
+- org.freedesktop.Sdk.Extension.node20
 build-options:
   append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node20/bin
   env:
     CARGO_HOME: /run/build/screen-time-app/cargo
     NPM_CONFIG_CACHE: /run/build/screen-time-app/flatpak-node/npm-cache
-    # Needed for Tauri
     WEBKIT_DISABLE_COMPOSITING_MODE: '1'
-
 command: screen-time-app
-
 finish-args:
-  # Display
-  - --share=ipc
-  - --socket=fallback-x11
-  - --socket=wayland
-  - --device=dri
-  # Sound
-  - --socket=pulseaudio
-  # Network (needed for updates/downloads if applicable)
-  - --share=network
-  # System tray/dbus (needed for idle detection and appindicator)
-  - --talk-name=org.kde.StatusNotifierWatcher
-  - --talk-name=org.freedesktop.ScreenSaver
-  - --system-talk-name=org.freedesktop.login1
-  # Background tracking (xdotool/hyprctl might need more permissions, but let's give standard session access)
-  - --talk-name=org.freedesktop.Flatpak
-
+- --share=ipc
+- --socket=fallback-x11
+- --socket=wayland
+- --device=dri
+- --socket=pulseaudio
+- --share=network
+- --talk-name=org.kde.StatusNotifierWatcher
+- --talk-name=org.freedesktop.ScreenSaver
+- --system-talk-name=org.freedesktop.login1
+- --talk-name=org.freedesktop.Flatpak
 modules:
-  - name: xdotool
-    buildsystem: simple
-    build-commands:
-      - make
-      - make install PREFIX=/app
+- name: intltool
+  cleanup:
+  - '*'
+  sources:
+  - type: archive
+    url: https://launchpad.net/intltool/trunk/0.51.0/+download/intltool-0.51.0.tar.gz
+    mirror-urls:
+    - https://sources.suse.com/SUSE:SLE-15-SP7:Update:BCI/000product/ca527df4d03bf96a67854a8ed2f0c64b/INCLUDED/SUSE:SLE-15-SP6:GA::intltool::45f77273c3f2ef792fa697b444183beb/intltool-0.51.0.tar.gz
+    - https://mirror-hk.koddos.net/lfs/lfs-packages/12.0/intltool-0.51.0.tar.gz
+    - https://gstreamer.freedesktop.org/src/mirror/intltool-0.51.0.tar.gz
+    sha256: 67c74d94196b153b774ab9f89b2fa6c6ba79352407037c8c14d5aeb334e959cd
+  - type: patch
+    path: patches/intltool-perl5.26-regex-fixes.patch
+- name: libappindicator
+  build-options:
+    cflags: -Wno-error
+    make-args:
+    - -j1
+    env:
+      GTKDOCIZE: 'true'
+  rm-configure: true
+  config-opts:
+  - --disable-static
+  - --disable-gtk-doc
+  - --disable-tests
+  - --disable-mono-tests
+  - --enable-introspection=no
+  - --with-gtk=3
+  cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /lib/*.la
+  - /share/gtk-doc
+  - /share/gir-1.0
+  sources:
+  - type: archive
+    url: https://launchpad.net/libappindicator/12.10/12.10.0/+download/libappindicator-12.10.0.tar.gz
+    mirror-urls:
+    - https://mirror.math.princeton.edu/pub/frugalware/frugalware-2.1/source/xlib-extra/libappindicator/libappindicator-12.10.0.tar.gz
+    - https://distfiles.alpinelinux.org/distfiles/v3.12/libappindicator-12.10.0.tar.gz
+    - https://ftp.fr.openbsd.org/pub/OpenBSD/distfiles/libappindicator-12.10.0.tar.gz
+    sha256: d5907c1f98084acf28fd19593cb70672caa0ca1cf82d747ba6f4830d4cc3b49f
+  - type: patch
+    path: patches/0001-libappindicator-ftbfs.patch
+  - type: patch
+    path: patches/0002-libappindicator-no-python.patch
+  - type: patch
+    path: patches/0003-libappindicator-fix-crash-from-incorrect-signal-emission.patch
+  - type: patch
+    path: patches/0004-libappindicator-fix-crash-iterating-icon-themes.patch
+  - type: script
+    commands:
+    - autoreconf -sfi
+    dest-filename: autogen.sh
+  modules:
+  - name: libdbusmenu
+    build-options:
+      cflags: -Wno-error
+      env:
+        HAVE_VALGRIND_FALSE: '#'
+        HAVE_VALGRIND_TRUE: ''
+    cleanup:
+    - /include
+    - /libexec
+    - /lib/pkgconfig
+    - /lib/*.la
+    - /share/doc
+    - /share/libdbusmenu
+    - /share/gtk-doc
+    - /share/gir-1.0
+    config-opts:
+    - --disable-static
+    - --disable-gtk-doc
+    - --enable-introspection=no
+    - --disable-vala
+    - --disable-dumper
+    - --disable-tests
+    - --with-gtk=3
     sources:
-      - type: archive
-        url: https://github.com/jordansissel/xdotool/releases/download/v3.20211022.1/xdotool-3.20211022.1.tar.gz
-        sha256: 96f0facfde6d78eacad35b91b0f46fecd0b35e474c03e00e30da3fdd345f9ada
-
-  - name: screen-time-app
-    buildsystem: simple
-    build-commands:
-      # Flatpak generators provide the offline cache via variables or standard paths.
-      # For Node (flatpak-node-generator), we use npm ci --offline or npm install --offline.
-      - npm install --offline
-      # We just build the frontend normally
-      - npm run build
-
-      # Build the rust backend using cargo
-      # We need to tell cargo to be completely offline
-      - cargo build --release --offline --manifest-path src-tauri/Cargo.toml
-
-      # Install the binary
-      - install -Dm755 src-tauri/target/release/screen-time-app -t /app/bin/
-
-      # Install Desktop file
-      - install -Dm644 com.marexxxxxxx.screen-time-app.desktop /app/share/applications/com.marexxxxxxx.screen-time-app.desktop
-
-      # Install Icon
-      - install -Dm644 com.marexxxxxxx.screen-time-app.png /app/share/icons/hicolor/512x512/apps/com.marexxxxxxx.screen-time-app.png
-
-      # Install AppStream Metainfo
-      - install -Dm644 com.marexxxxxxx.screen-time-app.metainfo.xml /app/share/metainfo/com.marexxxxxxx.screen-time-app.metainfo.xml
-
+    - type: archive
+      url: https://launchpad.net/libdbusmenu/16.04/16.04.0/+download/libdbusmenu-16.04.0.tar.gz
+      mirror-urls:
+      - https://sources.suse.com/SUSE:SLFO:Main:Build/libdbusmenu/a5b3e4717f09f90f9cd5568a5f933e8d/libdbusmenu-16.04.0.tar.gz
+      - https://mirror.math.princeton.edu/pub/frugalware/frugalware-2.1/source/xlib/libdbusmenu/libdbusmenu-16.04.0.tar.gz
+      - https://ftp.fr.openbsd.org/pub/OpenBSD/distfiles/libdbusmenu-16.04.0.tar.gz
+      sha256: b9cc4a2acd74509435892823607d966d424bd9ad5d0b00938f27240a1bfa878a
+  - name: libindicator
+    build-options:
+      cflags: -Wno-error
+    cleanup:
+    - /include
+    - /libexec
+    - /lib/pkgconfig
+    - /lib/*.la
+    - /share/libindicator
+    - /share/gtk-doc
+    - /share/gir-1.0
+    config-opts:
+    - --disable-static
+    - --disable-tests
+    - --with-gtk=3
     sources:
-      # The main code (using official way from remote)
-      - type: dir
-        path: ..
-        skip:
-          - pkg
-          - src-tauri/target
-          - node_modules
-          - .git
-          - flatpak/.flatpak-builder
-          - flatpak/build-dir
-      # Local files required for the flatpak build
-      - type: file
-        path: com.marexxxxxxx.screen-time-app.desktop
-      - type: file
-        path: com.marexxxxxxx.screen-time-app.png
-      - type: file
-        path: com.marexxxxxxx.screen-time-app.metainfo.xml
-      # Node dependencies
-      - node-sources.json
-      # Cargo dependencies
-      - cargo-sources.json
+    - type: archive
+      url: https://launchpad.net/libindicator/12.10/12.10.1/+download/libindicator-12.10.1.tar.gz
+      mirror-urls:
+      - https://ftp.fr.openbsd.org/pub/OpenBSD/distfiles/libindicator-12.10.1.tar.gz
+      - https://distfiles.alpinelinux.org/distfiles/v3.11/libindicator-12.10.1.tar.gz
+      sha256: b2d2e44c10313d5c9cd60db455d520f80b36dc39562df079a3f29495e8f9447f
+    - type: shell
+      commands:
+      - '# FTBFS fix'
+      - sed -e '/LIBINDICATOR_LIBS/ s/\$LIBM/ $LIBM/' -i configure.ac
+    - type: script
+      commands:
+      - autoreconf -sfi
+      dest-filename: autogen.sh
+- name: xdotool
+  buildsystem: simple
+  build-commands:
+  - make
+  - make install PREFIX=/app
+  sources:
+  - type: archive
+    url: https://github.com/jordansissel/xdotool/releases/download/v3.20211022.1/xdotool-3.20211022.1.tar.gz
+    sha256: 96f0facfde6d78eacad35b91b0f46fecd0b35e474c03e00e30da3fdd345f9ada
+- name: screen-time-app
+  buildsystem: simple
+  build-commands:
+  - npm install --offline
+  - npm run build
+  - cargo build --release --offline --manifest-path src-tauri/Cargo.toml
+  - install -Dm755 src-tauri/target/release/screen-time-app -t /app/bin/
+  - install -Dm644 com.marexxxxxxx.screen-time-app.desktop /app/share/applications/com.marexxxxxxx.screen-time-app.desktop
+  - install -Dm644 com.marexxxxxxx.screen-time-app.png /app/share/icons/hicolor/512x512/apps/com.marexxxxxxx.screen-time-app.png
+  - install -Dm644 com.marexxxxxxx.screen-time-app.metainfo.xml /app/share/metainfo/com.marexxxxxxx.screen-time-app.metainfo.xml
+  sources:
+  - type: dir
+    path: ..
+    skip:
+    - pkg
+    - src-tauri/target
+    - node_modules
+    - .git
+    - flatpak/.flatpak-builder
+    - flatpak/build-dir
+  - type: file
+    path: com.marexxxxxxx.screen-time-app.desktop
+  - type: file
+    path: com.marexxxxxxx.screen-time-app.png
+  - type: file
+    path: com.marexxxxxxx.screen-time-app.metainfo.xml
+  - node-sources.json
+  - cargo-sources.json
