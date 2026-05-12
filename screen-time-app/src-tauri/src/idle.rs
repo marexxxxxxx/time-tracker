@@ -32,10 +32,8 @@ pub fn start_idle_detection(app_handle: AppHandle) {
 
                 if is_idle {
                     println!("User became idle after {} seconds.", idle_time_secs);
-                    crate::tray::set_tray_active(&app_handle, false);
                 } else {
                     println!("User is back from idle.");
-                    crate::tray::set_tray_active(&app_handle, true);
                 }
             }
         }
