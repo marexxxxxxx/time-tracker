@@ -5,7 +5,6 @@ use std::sync::{Arc, Mutex};
 use tauri::{Manager, State};
 
 mod idle;
-mod tray;
 mod tracker;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -189,11 +188,6 @@ pub fn run() {
 
             // Start idle detection
             idle::start_idle_detection(app.handle().clone());
-
-            // Setup Tray
-            if let Err(e) = tray::setup_tray(&app_handle) {
-                eprintln!("Failed to setup tray: {}", e);
-            }
 
             Ok(())
         })
