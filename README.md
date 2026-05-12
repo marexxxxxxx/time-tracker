@@ -69,6 +69,24 @@ cd screen-time-app
 makepkg -si
 ```
 
+### Flatpak Installation
+
+You can build and install the application locally as a Flatpak.
+
+1. **Install Prerequisites:**
+   Ensure you have `flatpak` and `flatpak-builder` installed, and the Flathub repository added:
+   ```bash
+   sudo apt install flatpak flatpak-builder
+   flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+   ```
+
+2. **Build and Install:**
+   Navigate to the flatpak directory and run `flatpak-builder`:
+   ```bash
+   cd screen-time-app/flatpak
+   flatpak-builder build-dir com.marexxxxxxx.screen-time-app.yml --force-clean --user --install
+   ```
+
 ---
 
 ## 📄 License
