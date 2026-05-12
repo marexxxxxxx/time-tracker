@@ -16,15 +16,31 @@ Built with **Tauri v2**, **Svelte 5**, **Tailwind CSS**, and **SQLite**.
 *   **Overview Dashboard:** Visual summary of daily usage with faux bar charts and category breakdowns.
 *   **Productivity Tracker:** Detailed insights into "Deep Work" sessions, tracking productive vs. leisure time.
 *   **App Blocker:** Manage focus schedules (mock UI).
-*   **Automatic Window Tracking:** Live background tracking of active windows (via `xdotool`, `hyprctl`, `swaymsg`) and scoring them into categories.
-*   **Idle Detection:** Automatically detect if you are away from the keyboard and pause the timer (via `xss` for X11, DBus for GNOME/Wayland).
+*   **Automatic Window Tracking:** Live background tracking of active windows and scoring them into categories.
+*   **Idle Detection:** Automatically detect if you are away from the keyboard and pause the timer.
+
+### 🖥 Window Tracking & Idle Detection Setups
+
+Depending on your desktop environment or window manager (especially common on Arch Linux), the background daemon uses different tools to track active windows and idle time:
+
+*   **X11 (General):** Uses `xdotool` for window tracking and `xprintidle` (or `libxss`) for idle detection.
+*   **Hyprland:** Uses `hyprctl activewindow` to track the current window. Idle detection typically relies on `ext-idle-notify` or GNOME DBus if integrated.
+*   **Sway:** Uses `swaymsg -t get_tree` to find the focused window.
+*   **GNOME / Wayland:** Uses DBus (`org.gnome.Mutter.IdleMonitor`) for both idle detection and window activity.
 *   **System Tray:** Quick access to the dashboard from your Linux tray.
 
 ---
 
 ## 🛠 Prerequisites
 
-Make sure you have the required dependencies for Tauri on Linux:
+Make sure you have the required system dependencies for Tauri on Linux.
+
+**For Arch Linux:**
+```bash
+sudo pacman -S webkit2gtk-4.1 base-devel curl wget file openssl gtk3 libayatana-appindicator librsvg libxss xdotool
+```
+
+**For Debian / Ubuntu:**
 ```bash
 sudo apt update
 sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxss-dev xdotool
@@ -74,7 +90,15 @@ makepkg -si
 You can build and install the application locally as a Flatpak.
 
 1. **Install Prerequisites:**
-   Ensure you have `flatpak` and `flatpak-builder` installed, and the Flathub repository added:
+   Ensure you have `flatpak` and `flatpak-builder` installed, and the Flathub repository added.
+
+   **For Arch Linux:**
+   ```bash
+   sudo pacman -S flatpak flatpak-builder
+   flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+   ```
+
+   **For Debian / Ubuntu:**
    ```bash
    sudo apt install flatpak flatpak-builder
    flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
