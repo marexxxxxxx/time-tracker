@@ -37,6 +37,14 @@ modules:
     sha256: 67c74d94196b153b774ab9f89b2fa6c6ba79352407037c8c14d5aeb334e959cd
   - type: patch
     path: patches/intltool-perl5.26-regex-fixes.patch
+- name: dbus-glib
+  config-opts:
+  - --disable-static
+  - --disable-gtk-doc
+  sources:
+  - type: archive
+    url: https://dbus.freedesktop.org/releases/dbus-glib/dbus-glib-0.112.tar.gz
+    sha256: "7d550dccdfcd286e33895501829ed971eeb65c614e73aadb4a08aeef719b143a"
 - name: libappindicator
   build-options:
     cflags: -Wno-error
@@ -44,12 +52,14 @@ modules:
     - -j1
     env:
       GTKDOCIZE: 'true'
+      # Bypass für verbleibende pkg-config PyGTK-Checks
+      APPINDICATOR_PYTHON_CFLAGS: '-I.'
+      APPINDICATOR_PYTHON_LIBS: '-L.'
   rm-configure: true
   config-opts:
   - --disable-static
   - --disable-gtk-doc
   - --disable-tests
-  - --disable-mono-tests
   - --enable-introspection=no
   - --with-gtk=3
   cleanup:
@@ -69,11 +79,20 @@ modules:
   - type: patch
     path: patches/0001-libappindicator-ftbfs.patch
   - type: patch
-    path: patches/0002-libappindicator-no-python.patch
-  - type: patch
     path: patches/0003-libappindicator-fix-crash-from-incorrect-signal-emission.patch
   - type: patch
     path: patches/0004-libappindicator-fix-crash-iterating-icon-themes.patch
+  - type: shell
+    commands:
+    # 1. Bindings sauber aus dem Make-Prozess werfen
+    - sed -i 's/\bbindings\b//g' Makefile.am
+    # 2. Bindings-Makefiles aus der Autoconf-Generierung entfernen
+    - sed -i '/bindings/d' configure.ac
+    # 3. Python-Makros radikal löschen, damit sie nie ausgeführt werden
+    - sed -i '/AM_PATH_PYTHON/d' configure.ac
+    - sed -i '/AM_CHECK_PYTHON_HEADERS/d' configure.ac
+    # 4. Verhindern, dass winzige C-Warnungen den Build crashen
+    - sed -i 's/-Werror//g' src/Makefile.am
   - type: script
     commands:
     - autoreconf -sfi
