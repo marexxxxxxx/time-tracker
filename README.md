@@ -13,9 +13,10 @@ Built with **Tauri v2**, **Svelte 5**, **Tailwind CSS**, and **SQLite**.
 
 ## 🚀 Features
 
-*   **Overview Dashboard:** Visual summary of daily usage with faux bar charts and category breakdowns.
-*   **Productivity Tracker:** Detailed insights into "Deep Work" sessions, tracking productive vs. leisure time.
-*   **App Blocker:** Manage focus schedules (mock UI).
+*   **Overview Dashboard:** Visual summary of daily screen time with real Chart.js bar charts, category donut charts, and productivity scores — all connected to the backend.
+*   **Productivity Tracker:** Detailed insights into "Deep Work" sessions with stacked bar charts, tracking productive vs. leisure time per day.
+*   **App Blocker:** Full-featured app blocking with add/remove/toggle, enforcement via window manager rules (Hyprland, Sway, X11), and automatic blocking on each tracking poll.
+*   **Dark Mode:** Toggle between light and dark themes with localStorage persistence.
 *   **Automatic Window Tracking:** Live background tracking of active windows and scoring them into categories.
 *   **Idle Detection:** Automatically detect if you are away from the keyboard and pause the timer.
 
@@ -46,14 +47,22 @@ sudo apt update
 sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxss-dev xdotool
 ```
 
+### Tech Stack
+
+*   **Backend:** Rust (Tauri v2, rusqlite, x11)
+*   **Frontend:** Svelte 5 (runes), Tailwind CSS (M3 color tokens)
+*   **Charts:** Chart.js v4 + svelte-chartjs
+*   **Database:** SQLite (bundled via rusqlite)
+*   **Window Managers:** Hyprland (hyprctl), Sway (swaymsg), X11 (xdotool/xprop)
+
 ---
 
 ## 🏗 Development
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/DEIN-BENUTZERNAME/screen-time-app.git
-    cd screen-time-app
+    git clone https://github.com/marexxxxxxx/time-tracker.git
+    cd time-tracker/screen-time-app
     ```
 2.  **Install JS dependencies:**
     ```bash
