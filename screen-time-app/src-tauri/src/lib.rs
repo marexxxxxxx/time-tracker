@@ -59,6 +59,13 @@ pub struct DeepWorkSession {
     pub category: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BlockedApp {
+    pub id: i64,
+    pub app_name: String,
+    pub is_blocked: bool,
+}
+
 // AppState to hold the rusqlite connection
 struct AppState {
     conn: Arc<Mutex<Option<Connection>>>,
@@ -218,6 +225,78 @@ fn get_deep_work_sessions(state: State<'_, AppState>) -> Result<Vec<DeepWorkSess
     }
 }
 
+#[tauri::command]
+fn get_blocked_apps(state: State<'_, AppState>) -> Result<Vec<BlockedApp>, String> {
+    let conn_guard = state.conn.lock().unwrap();
+    if let Some(conn) = conn_guard.as_ref() {
+        let mut stmt = conn.prepare("SELECT id, app_name, is_blocked FROM blocked_apps")
+            .map_err(|e| e.to_string())?;
+        let apps = stmt.query_map([], |row| {
+            Ok(BlockedApp {
+                id: row.get(0)?,
+                app_name: row.get(1)?,
+                is_blocked: row.get::<_, i64>(2)? == 1,
+            })
+        }).map_err(|e| e.to_string())?
+          .filter_map(|r| r.ok()).collect();
+        Ok(apps)
+    } else {
+        Err("Database not initialized".to_string())
+    }
+}
+
+#[tauri::command]
+fn add_blocked_app(state: State<'_, AppState>, app_name: String) -> Result<BlockedApp, String> {
+    let conn_guard = state.conn.lock().unwrap();
+    if let Some(conn) = conn_guard.as_ref() {
+        conn.execute("INSERT INTO blocked_apps (app_name, is_blocked) VALUES (?1, 1)", params![app_name])
+            .map_err(|e| e.to_string())?;
+        let id = conn.last_insert_rowid();
+        Ok(BlockedApp { id, app_name, is_blocked: true })
+    } else {
+        Err("Database not initialized".to_string())
+    }
+}
+
+#[tauri::command]
+fn remove_blocked_app(state: State<'_, AppState>, id: i64) -> Result<(), String> {
+    let conn_guard = state.conn.lock().unwrap();
+    if let Some(conn) = conn_guard.as_ref() {
+        conn.execute("DELETE FROM blocked_apps WHERE id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err("Database not initialized".to_string())
+    }
+}
+
+#[tauri::command]
+fn toggle_blocked_app(state: State<'_, AppState>, id: i64) -> Result<BlockedApp, String> {
+    let conn_guard = state.conn.lock().unwrap();
+    if let Some(conn) = conn_guard.as_ref() {
+        conn.execute("UPDATE blocked_apps SET is_blocked = NOT is_blocked WHERE id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        let app = conn.query_row("SELECT id, app_name, is_blocked FROM blocked_apps WHERE id = ?1", params![id], |row| {
+            Ok(BlockedApp {
+                id: row.get(0)?,
+                app_name: row.get(1)?,
+                is_blocked: row.get::<_, i64>(2)? == 1,
+            })
+        }).map_err(|e| e.to_string())?;
+        Ok(app)
+    } else {
+        Err("Database not initialized".to_string())
+    }
+}
+
+pub fn is_app_blocked(conn: &Connection, app_name: &str) -> bool {
+    conn.query_row(
+        "SELECT COUNT(*) FROM blocked_apps WHERE app_name = ?1 AND is_blocked = 1",
+        params![app_name],
+        |row| row.get::<_, i64>(0),
+    ).unwrap_or(0) > 0
+}
+
 fn seed_database(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
     // Check if table is empty
     let count: i64 = conn.query_row("SELECT COUNT(*) FROM activities", [], |row| row.get(0))?;
@@ -306,6 +385,15 @@ fn init_db(db_path: &std::path::Path) -> Result<Connection, Box<dyn std::error::
         );
     ", [])?;
 
+    conn.execute("
+        CREATE TABLE IF NOT EXISTS blocked_apps (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            app_name TEXT NOT NULL UNIQUE,
+            is_blocked INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+    ", [])?;
+
     Ok(conn)
 }
 
@@ -357,7 +445,11 @@ pub fn run() {
             get_activities,
             get_daily_summary,
             get_productivity_by_week,
-            get_deep_work_sessions
+            get_deep_work_sessions,
+            get_blocked_apps,
+            add_blocked_app,
+            remove_blocked_app,
+            toggle_blocked_app,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
