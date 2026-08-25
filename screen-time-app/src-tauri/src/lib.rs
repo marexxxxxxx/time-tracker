@@ -250,8 +250,11 @@ fn get_blocked_apps(state: State<'_, AppState>) -> Result<Vec<BlockedApp>, Strin
 fn add_blocked_app(state: State<'_, AppState>, app_name: String) -> Result<BlockedApp, String> {
     let conn_guard = state.conn.lock().unwrap();
     if let Some(conn) = conn_guard.as_ref() {
-        conn.execute("INSERT INTO blocked_apps (app_name, is_blocked) VALUES (?1, 1)", params![app_name])
+        let changed = conn.execute("INSERT OR IGNORE INTO blocked_apps (app_name, is_blocked) VALUES (?1, 1)", params![app_name])
             .map_err(|e| e.to_string())?;
+        if changed == 0 {
+            return Err("App already blocked".to_string());
+        }
         let id = conn.last_insert_rowid();
         Ok(BlockedApp { id, app_name, is_blocked: true })
     } else {

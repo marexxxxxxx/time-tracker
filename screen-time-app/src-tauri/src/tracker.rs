@@ -31,6 +31,7 @@ pub fn start_window_tracking(conn: Arc<Mutex<Option<Connection>>>) {
                 if let Ok(db_guard) = conn.lock() {
                     if let Some(db) = db_guard.as_ref() {
                         if crate::is_app_blocked(db, &active.app_name) {
+                            crate::blocker::enforce_blocked_apps(db, &[active.app_name.clone()]);
                             current_window = None;
                             current_id = None;
                             continue;
