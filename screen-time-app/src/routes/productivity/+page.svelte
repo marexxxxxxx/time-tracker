@@ -3,26 +3,23 @@
     import StatCard from '$lib/components/StatCard.svelte';
     import ProductivityChart from '$lib/components/ProductivityChart.svelte';
     import DeepWorkTimeline from '$lib/components/DeepWorkTimeline.svelte';
-    import CategoryDonut from '$lib/components/CategoryDonut.svelte';
+    import { productivityScore, deepWorkSessionsList, totalDuration, formatDuration, productivityByWeek } from '$lib/stores/activities';
 
-    const weeklyData = [
-        { day: "Mon", productive: 60, neutral: 10, leisure: 20 },
-        { day: "Tue", productive: 70, neutral: 5, leisure: 15 },
-        { day: "Wed", productive: 40, neutral: 20, leisure: 30 },
-        { day: "Thu", productive: 80, neutral: 10, leisure: 10 },
-    ];
+    let weekData = $derived($productivityByWeek.map(d => ({
+        day: d.day,
+        productive: d.productive_duration,
+        neutral: d.neutral_duration,
+        leisure: d.leisure_duration,
+    })));
 
-    const deepSessions = [
-        { title: "VS Code Architecture", startTime: "09:00 AM", endTime: "11:30 AM", duration: "2h 30m", category: "Coding", color: "#0058bc" },
-        { title: "Figma UI Kit Update", startTime: "01:00 PM", endTime: "02:20 PM", duration: "1h 20m", category: "Design", color: "#4c4aca" },
-        { title: "Code Review & PRs", startTime: "03:00 PM", endTime: "04:15 PM", duration: "1h 15m", category: "Coding", color: "#0058bc" },
-    ];
-
-    const categories = [
-        { name: "Coding", percentage: 65, color: "#0058bc" },
-        { name: "Design", percentage: 25, color: "#4c4aca" },
-        { name: "Writing", percentage: 10, color: "#006e28" },
-    ];
+    let sessions = $derived($deepWorkSessionsList.map(s => ({
+        title: s.title || s.app_name,
+        startTime: new Date(s.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        endTime: new Date(s.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        duration: formatDuration(s.duration),
+        category: s.category,
+        color: s.category === 'Coding' ? '#0058bc' : s.category === 'Design' ? '#4c4aca' : '#006e28',
+    })));
 </script>
 
 <TopBar title="Productivity Tracker" />
@@ -33,22 +30,25 @@
             <StatCard
                 icon="trending_up"
                 label="Productivity Score"
-                value="84%"
-                subtext="+5% from yesterday"
-                progress={84}
+                value="{$productivityScore}%"
+                progress={$productivityScore}
             />
         </div>
 
         <div class="col-span-12 md:col-span-8 bg-surface-container-lowest border border-outline-variant rounded-xl p-lg shadow-[0_4px_20px_rgba(0,0,0,0.04)] dark:bg-surface-container dark:border-outline/20">
-            <ProductivityChart data={weeklyData} />
-        </div>
-
-        <div class="col-span-12 md:col-span-5 bg-surface-container-lowest border border-outline-variant rounded-xl p-lg shadow-[0_4px_20px_rgba(0,0,0,0.04)] dark:bg-surface-container dark:border-outline/20">
-            <CategoryDonut categories={categories} />
+            {#if weekData.length > 0}
+                <ProductivityChart data={weekData} />
+            {:else}
+                <p class="text-on-surface-variant font-body-md p-lg">No productivity data yet</p>
+            {/if}
         </div>
 
         <div class="col-span-12 md:col-span-7 bg-surface-container-lowest border border-outline-variant rounded-xl p-lg shadow-[0_4px_20px_rgba(0,0,0,0.04)] dark:bg-surface-container dark:border-outline/20">
-            <DeepWorkTimeline sessions={deepSessions} />
+            {#if sessions.length > 0}
+                <DeepWorkTimeline sessions={sessions} />
+            {:else}
+                <p class="text-on-surface-variant font-body-md p-lg">No deep work sessions recorded yet</p>
+            {/if}
         </div>
     </div>
 </main>
