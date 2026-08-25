@@ -4,6 +4,7 @@ use rusqlite::{Connection, params};
 use std::sync::{Arc, Mutex};
 use tauri::{Manager, State};
 
+mod blocker;
 mod idle;
 mod tracker;
 
