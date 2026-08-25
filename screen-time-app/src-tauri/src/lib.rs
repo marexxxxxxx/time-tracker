@@ -294,11 +294,27 @@ fn toggle_blocked_app(state: State<'_, AppState>, id: i64) -> Result<BlockedApp,
 }
 
 pub fn is_app_blocked(conn: &Connection, app_name: &str) -> bool {
-    conn.query_row(
+    // Check exact match first
+    let exact = conn.query_row(
         "SELECT COUNT(*) FROM blocked_apps WHERE LOWER(app_name) = LOWER(?1) AND is_blocked = 1",
         params![app_name],
         |row| row.get::<_, i64>(0),
-    ).unwrap_or(0) > 0
+    ).unwrap_or(0) > 0;
+    if exact { return true; }
+
+    // Check if any blocked app name appears within the active app name
+    // (e.g. "YouTube" in "Video Title - YouTube")
+    if let Ok(mut stmt) = conn.prepare("SELECT app_name FROM blocked_apps WHERE is_blocked = 1") {
+        if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
+            let lower = app_name.to_lowercase();
+            for row in rows.flatten() {
+                if lower.contains(&row.to_lowercase()) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 fn seed_database(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {

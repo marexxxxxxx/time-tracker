@@ -30,9 +30,11 @@ pub fn start_window_tracking(conn: Arc<Mutex<Option<Connection>>>) {
                 // Check if this app is blocked
                 if let Ok(db_guard) = conn.lock() {
                     if let Some(db) = db_guard.as_ref() {
+                        eprintln!("[tracker] checking blocked: app='{}' original='{}'", active.app_name, active.original_class);
                         if crate::is_app_blocked(db, &active.app_name) {
                             // Don't redirect if already on blocked page
                             if !active.title.contains(BLOCKED_TITLE_MARKER) {
+                                eprintln!("[tracker] BLOCKED app='{}' title='{}'", active.app_name, active.title);
                                 handle_blocked_app(&active, &session_type);
                             }
                             current_window = None;
@@ -99,6 +101,7 @@ pub fn start_window_tracking(conn: Arc<Mutex<Option<Connection>>>) {
 
 fn handle_blocked_app(active: &WindowInfo, session_type: &str) {
     let is_browser = crate::blocker::is_browser(&active.original_class);
+    eprintln!("[blocker] app='{}' class='{}' is_browser={} session={}", active.app_name, active.original_class, is_browser, session_type);
 
     if is_browser {
         // Navigate the current tab to blocked page via keyboard simulation
@@ -108,20 +111,27 @@ fn handle_blocked_app(active: &WindowInfo, session_type: &str) {
             user
         );
         if !std::path::Path::new(&html_path).exists() {
+            eprintln!("[blocker] blocked.html not found at {}", html_path);
             return;
         }
         let url = format!("file://{}?app={}", html_path, active.app_name);
+        eprintln!("[blocker] url={}", url);
 
         // Copy URL to clipboard
-        let _ = Command::new("wl-copy").arg(&url).output();
+        let wl_out = Command::new("wl-copy").arg(&url).output();
+        eprintln!("[blocker] wl-copy: {:?}", wl_out.as_ref().map(|o| o.status));
         std::thread::sleep(std::time::Duration::from_millis(100));
 
         // Ctrl+L → focus address bar, Ctrl+V → paste URL, Enter → navigate
-        let _ = Command::new("wtype").args(&["-M", "ctrl", "-k", "l"]).output();
+        let w1 = Command::new("wtype").args(&["-M", "ctrl", "-k", "l"]).output();
+        eprintln!("[blocker] wtype ctrl+l: {:?}", w1.as_ref().map(|o| o.status));
         std::thread::sleep(std::time::Duration::from_millis(150));
-        let _ = Command::new("wtype").args(&["-M", "ctrl", "-k", "v"]).output();
+        let w2 = Command::new("wtype").args(&["-M", "ctrl", "-k", "v"]).output();
+        eprintln!("[blocker] wtype ctrl+v: {:?}", w2.as_ref().map(|o| o.status));
         std::thread::sleep(std::time::Duration::from_millis(100));
-        let _ = Command::new("wtype").args(&["-k", "Return"]).output();
+        let w3 = Command::new("wtype").args(&["-k", "Return"]).output();
+        eprintln!("[blocker] wtype Return: {:?}", w3.as_ref().map(|o| o.status));
+        eprintln!("[blocker] done");
     } else {
         // Non-browser: close the window
         match session_type {
