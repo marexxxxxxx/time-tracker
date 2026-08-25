@@ -19,6 +19,46 @@ pub struct Activity {
     pub productivity_score: i64,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DailySummary {
+    pub total_duration: i64,
+    pub productivity_score: i64,
+    pub app_usage: Vec<AppUsage>,
+    pub categories: Vec<CategoryBreakdown>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AppUsage {
+    pub app_name: String,
+    pub duration: i64,
+    pub category: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CategoryBreakdown {
+    pub name: String,
+    pub duration: i64,
+    pub percentage: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProductivityDay {
+    pub day: String,
+    pub productive_duration: i64,
+    pub neutral_duration: i64,
+    pub leisure_duration: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeepWorkSession {
+    pub app_name: String,
+    pub title: String,
+    pub start_time: String,
+    pub end_time: String,
+    pub duration: i64,
+    pub category: String,
+}
+
 // AppState to hold the rusqlite connection
 struct AppState {
     conn: Arc<Mutex<Option<Connection>>>,
@@ -53,6 +93,128 @@ fn get_activities(state: State<'_, AppState>) -> Result<Vec<Activity>, String> {
         Ok(activities)
     } else {
         Err("Database connection not initialized yet".to_string())
+    }
+}
+
+#[tauri::command]
+fn get_daily_summary(state: State<'_, AppState>) -> Result<DailySummary, String> {
+    let conn_guard = state.conn.lock().unwrap();
+    if let Some(conn) = conn_guard.as_ref() {
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        let start = format!("{}T00:00:00", today);
+        let end = format!("{}T23:59:59", today);
+
+        let mut stmt = conn.prepare(
+            "SELECT app_name, duration, category, productivity_score FROM activities WHERE start_time >= ?1 AND start_time <= ?2"
+        ).map_err(|e| e.to_string())?;
+
+        let rows: Vec<(String, i64, String, i64)> = stmt.query_map(params![start, end], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        }).map_err(|e| e.to_string())?
+          .filter_map(|r| r.ok()).collect();
+
+        let total_duration: i64 = rows.iter().map(|r| r.1).sum();
+        let productive_duration: i64 = rows.iter().filter(|r| r.3 > 0).map(|r| r.1).sum();
+        let productivity_score = if total_duration > 0 {
+            productive_duration * 100 / total_duration
+        } else { 0 };
+
+        let mut app_map: std::collections::HashMap<String, (i64, String)> = std::collections::HashMap::new();
+        for (app, dur, cat, _) in &rows {
+            let entry = app_map.entry(app.clone()).or_insert((0, cat.clone()));
+            entry.0 += dur;
+        }
+        let mut app_usage: Vec<AppUsage> = app_map.iter()
+            .map(|(k, (d, c))| AppUsage { app_name: k.clone(), duration: *d, category: c.clone() })
+            .collect();
+        app_usage.sort_by(|a, b| b.duration.cmp(&a.duration));
+
+        let mut cat_map: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+        for (_, dur, cat, _) in &rows {
+            *cat_map.entry(cat.clone()).or_insert(0) += dur;
+        }
+        let mut categories: Vec<CategoryBreakdown> = cat_map.iter()
+            .map(|(k, d)| CategoryBreakdown {
+                name: k.clone(),
+                duration: *d,
+                percentage: if total_duration > 0 { d * 100 / total_duration } else { 0 },
+            })
+            .collect();
+        categories.sort_by(|a, b| b.duration.cmp(&a.duration));
+
+        Ok(DailySummary { total_duration, productivity_score, app_usage, categories })
+    } else {
+        Err("Database connection not initialized".to_string())
+    }
+}
+
+#[tauri::command]
+fn get_productivity_by_week(state: State<'_, AppState>) -> Result<Vec<ProductivityDay>, String> {
+    let conn_guard = state.conn.lock().unwrap();
+    if let Some(conn) = conn_guard.as_ref() {
+        let today = Utc::now();
+        let week_start = today - Duration::days(6);
+        let start = week_start.format("%Y-%m-%dT00:00:00").to_string();
+
+        let mut stmt = conn.prepare(
+            "SELECT start_time, duration, productivity_score FROM activities WHERE start_time >= ?1"
+        ).map_err(|e| e.to_string())?;
+
+        let rows: Vec<(String, i64, i64)> = stmt.query_map(params![start], |row| {
+            Ok((row.get::<_, String>(0)?, row.get(1)?, row.get(2)?))
+        }).map_err(|e| e.to_string())?
+          .filter_map(|r| r.ok()).collect();
+
+        let day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+        let days: Vec<ProductivityDay> = (0..7).map(|i| {
+            let d = week_start + Duration::days(i);
+            let day_str = d.format("%Y-%m-%d").to_string();
+            let day_idx = d.format("%u").to_string().parse::<usize>().unwrap() - 1;
+            let day_label = day_names[day_idx];
+
+            let day_rows: Vec<_> = rows.iter().filter(|r| r.0.starts_with(&day_str)).collect();
+            let productive: i64 = day_rows.iter().filter(|r| r.2 > 0).map(|r| r.1).sum();
+            let total: i64 = day_rows.iter().map(|r| r.1).sum();
+            let leisure: i64 = day_rows.iter().filter(|r| r.2 < 0).map(|r| r.1).sum();
+            let neutral = total - productive - leisure;
+
+            ProductivityDay {
+                day: day_label.to_string(),
+                productive_duration: productive,
+                neutral_duration: neutral,
+                leisure_duration: leisure,
+            }
+        }).collect();
+
+        Ok(days)
+    } else {
+        Err("Database connection not initialized".to_string())
+    }
+}
+
+#[tauri::command]
+fn get_deep_work_sessions(state: State<'_, AppState>) -> Result<Vec<DeepWorkSession>, String> {
+    let conn_guard = state.conn.lock().unwrap();
+    if let Some(conn) = conn_guard.as_ref() {
+        let mut stmt = conn.prepare(
+            "SELECT app_name, title, start_time, end_time, duration, category FROM activities WHERE productivity_score > 0 AND duration >= 1800 ORDER BY start_time DESC LIMIT 10"
+        ).map_err(|e| e.to_string())?;
+
+        let sessions: Vec<DeepWorkSession> = stmt.query_map([], |row| {
+            Ok(DeepWorkSession {
+                app_name: row.get(0)?,
+                title: row.get(1)?,
+                start_time: row.get(2)?,
+                end_time: row.get(3)?,
+                duration: row.get(4)?,
+                category: row.get(5)?,
+            })
+        }).map_err(|e| e.to_string())?
+          .filter_map(|r| r.ok()).collect();
+
+        Ok(sessions)
+    } else {
+        Err("Database connection not initialized".to_string())
     }
 }
 
@@ -191,7 +353,12 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_activities])
+        .invoke_handler(tauri::generate_handler![
+            get_activities,
+            get_daily_summary,
+            get_productivity_by_week,
+            get_deep_work_sessions
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
