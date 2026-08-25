@@ -101,16 +101,27 @@ fn handle_blocked_app(active: &WindowInfo, session_type: &str) {
     let is_browser = crate::blocker::is_browser(&active.original_class);
 
     if is_browser {
-        // Open blocked page in a new tab
+        // Navigate the current tab to blocked page via keyboard simulation
         let user = std::env::var("USER").unwrap_or_default();
         let html_path = format!(
             "/home/{}/.local/share/marexxxxxxx.screen-time-app/blocked.html",
             user
         );
-        if std::path::Path::new(&html_path).exists() {
-            let url = format!("file://{}?app={}", html_path, active.app_name);
-            let _ = Command::new("xdg-open").arg(&url).output();
+        if !std::path::Path::new(&html_path).exists() {
+            return;
         }
+        let url = format!("file://{}?app={}", html_path, active.app_name);
+
+        // Copy URL to clipboard
+        let _ = Command::new("wl-copy").arg(&url).output();
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // Ctrl+L → focus address bar, Ctrl+V → paste URL, Enter → navigate
+        let _ = Command::new("wtype").args(&["-M", "ctrl", "-k", "l"]).output();
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        let _ = Command::new("wtype").args(&["-M", "ctrl", "-k", "v"]).output();
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let _ = Command::new("wtype").args(&["-k", "Return"]).output();
     } else {
         // Non-browser: close the window
         match session_type {
