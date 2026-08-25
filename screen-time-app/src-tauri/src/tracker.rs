@@ -27,6 +27,17 @@ pub fn start_window_tracking(conn: Arc<Mutex<Option<Connection>>>) {
             // or we could check X11 idle directly.
 
             if let Some(active) = get_active_window() {
+                // Check if this app is blocked
+                if let Ok(db_guard) = conn.lock() {
+                    if let Some(db) = db_guard.as_ref() {
+                        if crate::is_app_blocked(db, &active.app_name) {
+                            current_window = None;
+                            current_id = None;
+                            continue;
+                        }
+                    }
+                }
+
                 // Determine category and score (very basic heuristic)
                 let category = categorize_app(&active.app_name, &active.title);
                 let score = if category == "Coding" || category == "Design" || category == "Writing" { 1 }
