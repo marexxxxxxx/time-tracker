@@ -2,8 +2,11 @@
     import TopBar from '$lib/components/TopBar.svelte';
     import PageHeader from '$lib/components/PageHeader.svelte';
     import AppBlockCard from '$lib/components/AppBlockCard.svelte';
+    import AddAppModal from '$lib/components/AddAppModal.svelte';
     import { blockedApps, toggleBlockedApp, fetchBlockedApps } from '$lib/stores/blockedApps';
     import { onMount } from 'svelte';
+
+    let showModal = $state(false);
 
     onMount(() => {
         fetchBlockedApps();
@@ -34,6 +37,16 @@
 <main class="flex-1 px-margin-desktop py-xxl mt-[88px] max-w-7xl mx-auto w-full">
     <div class="max-w-4xl mx-auto space-y-xl">
         <PageHeader title="Blocked Apps & Limits" description="Manage restrictions and focus schedules for your applications." />
+
+        <div class="flex justify-end mb-lg">
+            <button
+                class="bg-primary text-on-primary px-md py-sm rounded-lg font-label-md text-label-md hover:bg-primary-container transition-colors flex items-center gap-xs"
+                onclick={() => showModal = true}
+            >
+                <span class="material-symbols-outlined text-[18px]">add</span>
+                Block App
+            </button>
+        </div>
 
         {#if $blockedApps.length === 0}
             <div class="text-center py-xxl">
@@ -104,4 +117,6 @@
             </section>
         {/if}
     </div>
+
+    <AddAppModal open={showModal} onclose={() => showModal = false} />
 </main>
