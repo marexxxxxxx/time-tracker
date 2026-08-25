@@ -50,6 +50,72 @@ export const deepWorkSessions = derived(activities, $activities => {
         .sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
 });
 
+export const dailySummary = writable<DailySummary | null>(null);
+export const productivityByWeek = writable<ProductivityDay[]>([]);
+export const deepWorkSessionsList = writable<DeepWorkSession[]>([]);
+
+export interface DailySummary {
+    total_duration: number;
+    productivity_score: number;
+    app_usage: BackendAppUsage[];
+    categories: CategoryBreakdown[];
+}
+
+export interface BackendAppUsage {
+    app_name: string;
+    duration: number;
+    category: string;
+}
+
+export interface CategoryBreakdown {
+    name: string;
+    duration: number;
+    percentage: number;
+}
+
+export interface ProductivityDay {
+    day: string;
+    productive_duration: number;
+    neutral_duration: number;
+    leisure_duration: number;
+}
+
+export interface DeepWorkSession {
+    app_name: string;
+    title: string;
+    start_time: string;
+    end_time: string;
+    duration: number;
+    category: string;
+}
+
+export async function fetchDailySummary() {
+    try {
+        const data: DailySummary = await invoke('get_daily_summary');
+        dailySummary.set(data);
+    } catch (e) {
+        console.error("Failed to fetch daily summary:", e);
+    }
+}
+
+export async function fetchProductivityByWeek() {
+    try {
+        const data: ProductivityDay[] = await invoke('get_productivity_by_week');
+        productivityByWeek.set(data);
+    } catch (e) {
+        console.error("Failed to fetch productivity data:", e);
+    }
+}
+
+export async function fetchDeepWorkSessions() {
+    try {
+        const data: DeepWorkSession[] = await invoke('get_deep_work_sessions');
+        deepWorkSessionsList.set(data);
+    } catch (e) {
+        console.error("Failed to fetch deep work sessions:", e);
+    }
+}
+
 // Format duration helper
 export function formatDuration(seconds: number): string {
     const h = Math.floor(seconds / 3600);
