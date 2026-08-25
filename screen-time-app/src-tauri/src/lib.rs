@@ -295,7 +295,7 @@ fn toggle_blocked_app(state: State<'_, AppState>, id: i64) -> Result<BlockedApp,
 
 pub fn is_app_blocked(conn: &Connection, app_name: &str) -> bool {
     conn.query_row(
-        "SELECT COUNT(*) FROM blocked_apps WHERE app_name = ?1 AND is_blocked = 1",
+        "SELECT COUNT(*) FROM blocked_apps WHERE LOWER(app_name) = LOWER(?1) AND is_blocked = 1",
         params![app_name],
         |row| row.get::<_, i64>(0),
     ).unwrap_or(0) > 0
