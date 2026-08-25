@@ -101,6 +101,34 @@ pub fn start_window_tracking(conn: Arc<Mutex<Option<Connection>>>) {
     });
 }
 
+const BROWSER_CLASSES: &[&str] = &["chromium", "firefox", "google-chrome", "brave-browser", "vivaldi", "opera", "microsoft-edge"];
+
+fn extract_browser_site(app_name: &str, title: &str) -> Option<String> {
+    let lower = app_name.to_lowercase();
+    if !BROWSER_CLASSES.iter().any(|b| lower.contains(b)) {
+        return None;
+    }
+    // Chromium titles: "Page Title - Chromium" or "Page Title — Site Name"
+    // Firefox titles: "Page Title — Mozilla Firefox" or "Page Title - Site Name"
+    let cleaned = title
+        .replace(" — Mozilla Firefox", "")
+        .replace(" - Mozilla Firefox", "")
+        .replace(" — Chromium", "")
+        .replace(" - Chromium", "")
+        .replace(" — Google Chrome", "")
+        .replace(" - Google Chrome", "")
+        .replace(" — Brave", "")
+        .replace(" - Brave", "")
+        .replace(" — Vivaldi", "")
+        .replace(" - Vivaldi", "")
+        .replace(" — Opera", "")
+        .replace(" - Opera", "")
+        .replace(" — Microsoft Edge", "")
+        .replace(" - Microsoft Edge", "");
+    let cleaned = cleaned.trim().to_string();
+    if cleaned.is_empty() { None } else { Some(cleaned) }
+}
+
 fn categorize_app(app_name: &str, title: &str) -> String {
     let app_lower = app_name.to_lowercase();
     let title_lower = title.to_lowercase();
@@ -111,59 +139,71 @@ fn categorize_app(app_name: &str, title: &str) -> String {
     if app_lower.contains("figma") || app_lower.contains("gimp") || app_lower.contains("inkscape") {
         return "Design".to_string();
     }
-    if title_lower.contains("youtube") || title_lower.contains("netflix") || app_lower.contains("spotify") || app_lower.contains("vlc") || app_lower.contains("steam") {
+    // Check both app_name (may be extracted site name) and title for entertainment
+    if app_lower.contains("youtube") || app_lower.contains("netflix") || app_lower.contains("twitch")
+        || app_lower.contains("spotify") || app_lower.contains("vlc") || app_lower.contains("steam")
+        || title_lower.contains("youtube") || title_lower.contains("netflix") || title_lower.contains("twitch") {
         return "Entertainment".to_string();
     }
     if app_lower.contains("slack") || app_lower.contains("discord") || app_lower.contains("teams") {
         return "Communication".to_string();
     }
+    // Generic site names from browser → Neutral (social media, news, etc.)
+    if BROWSER_CLASSES.iter().any(|b| app_lower.contains(b)) {
+        return "Neutral".to_string();
+    }
 
-    // Default
     "Neutral".to_string()
 }
 
 fn get_active_window() -> Option<WindowInfo> {
     let session_type = std::env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "x11".to_string());
 
-    match session_type.as_str() {
-        "wayland" => {
-            // Try sway
-            if let Ok(output) = Command::new("swaymsg").arg("-t").arg("get_tree").output() {
-                if output.status.success() {
-                    let json_str = String::from_utf8_lossy(&output.stdout);
-                    if let Ok(tree) = serde_json::from_str::<serde_json::Value>(&json_str) {
-                        if let Some(focused) = find_focused_node(&tree) {
-                            let app_name = focused["app_id"].as_str()
-                                .or(focused["window_properties"]["class"].as_str())
-                                .unwrap_or("Unknown").to_string();
-                            let title = focused["name"].as_str().unwrap_or("").to_string();
-                            return Some(WindowInfo { app_name, title });
-                        }
-                    }
+    let mut info = match session_type.as_str() {
+        "wayland" => get_wayland_active_window(),
+        _ => get_x11_active_window(),
+    }?;
+
+    // For browsers, use the website name instead of "chromium"/"firefox" etc.
+    if let Some(site) = extract_browser_site(&info.app_name, &info.title) {
+        info.app_name = site;
+    }
+
+    Some(info)
+}
+
+fn get_wayland_active_window() -> Option<WindowInfo> {
+    // Try sway
+    if let Ok(output) = Command::new("swaymsg").arg("-t").arg("get_tree").output() {
+        if output.status.success() {
+            let json_str = String::from_utf8_lossy(&output.stdout);
+            if let Ok(tree) = serde_json::from_str::<serde_json::Value>(&json_str) {
+                if let Some(focused) = find_focused_node(&tree) {
+                    let app_name = focused["app_id"].as_str()
+                        .or(focused["window_properties"]["class"].as_str())
+                        .unwrap_or("Unknown").to_string();
+                    let title = focused["name"].as_str().unwrap_or("").to_string();
+                    return Some(WindowInfo { app_name, title });
                 }
             }
-
-            // Try hyprland
-            if let Ok(output) = Command::new("hyprctl").arg("activewindow").arg("-j").output() {
-                if output.status.success() {
-                    let json_str = String::from_utf8_lossy(&output.stdout);
-                    if let Ok(window) = serde_json::from_str::<serde_json::Value>(&json_str) {
-                        let app_name = window["class"].as_str().unwrap_or("Unknown").to_string();
-                        let title = window["title"].as_str().unwrap_or("").to_string();
-                        if !app_name.is_empty() && app_name != "Unknown" {
-                            return Some(WindowInfo { app_name, title });
-                        }
-                    }
-                }
-            }
-
-            None
-        },
-        _ => {
-            // Assume X11
-            get_x11_active_window()
         }
     }
+
+    // Try hyprland
+    if let Ok(output) = Command::new("hyprctl").arg("activewindow").arg("-j").output() {
+        if output.status.success() {
+            let json_str = String::from_utf8_lossy(&output.stdout);
+            if let Ok(window) = serde_json::from_str::<serde_json::Value>(&json_str) {
+                let app_name = window["class"].as_str().unwrap_or("Unknown").to_string();
+                let title = window["title"].as_str().unwrap_or("").to_string();
+                if !app_name.is_empty() && app_name != "Unknown" {
+                    return Some(WindowInfo { app_name, title });
+                }
+            }
+        }
+    }
+
+    None
 }
 
 fn find_focused_node(node: &serde_json::Value) -> Option<serde_json::Value> {
