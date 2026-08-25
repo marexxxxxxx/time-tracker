@@ -1,6 +1,7 @@
 <script lang="ts">
     import TopBar from '$lib/components/TopBar.svelte';
     import StatCard from '$lib/components/StatCard.svelte';
+    import BarChart from '$lib/components/BarChart.svelte';
     import AppUsageList from '$lib/components/AppUsageList.svelte';
     import CategoryDonut from '$lib/components/CategoryDonut.svelte';
     import TimeRangeSelector from '$lib/components/TimeRangeSelector.svelte';
@@ -35,11 +36,15 @@
                 <h2 class="font-headline-md text-headline-md text-on-surface">Daily Usage</h2>
                 <TimeRangeSelector />
             </div>
-            <div class="flex-1 flex items-center justify-center min-h-[200px] text-on-surface-variant font-body-md">
+            <div class="flex-1 min-h-[200px]">
                 {#if summary && summary.app_usage.length > 0}
-                    <p>Chart coming in Phase 4</p>
+                    <BarChart
+                        labels={summary.app_usage.slice(0, 6).map(a => a.app_name)}
+                        data={summary.app_usage.slice(0, 6).map(a => a.duration / 3600)}
+                        unit="hours"
+                    />
                 {:else}
-                    <p>No data yet today</p>
+                    <div class="flex items-center justify-center h-full text-on-surface-variant font-body-md">No data yet today</div>
                 {/if}
             </div>
         </div>
