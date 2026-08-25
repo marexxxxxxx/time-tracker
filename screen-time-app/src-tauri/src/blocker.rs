@@ -2,6 +2,13 @@ use std::process::Command;
 use rusqlite::Connection;
 use crate::is_app_blocked;
 
+const BROWSER_CLASSES: &[&str] = &["chromium", "firefox", "google-chrome", "brave-browser", "vivaldi", "opera", "microsoft-edge"];
+
+pub fn is_browser(app_name: &str) -> bool {
+    let lower = app_name.to_lowercase();
+    BROWSER_CLASSES.iter().any(|b| lower.contains(b))
+}
+
 pub fn enforce_blocked_apps(conn: &Connection, app_names: &[String]) {
     for app_name in app_names {
         if !is_app_blocked(conn, app_name) {
