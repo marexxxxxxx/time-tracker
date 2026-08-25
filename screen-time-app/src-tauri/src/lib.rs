@@ -302,42 +302,21 @@ pub fn is_app_blocked(conn: &Connection, app_name: &str) -> bool {
 }
 
 fn seed_database(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
-    // Check if table is empty
     let count: i64 = conn.query_row("SELECT COUNT(*) FROM activities", [], |row| row.get(0))?;
 
     if count == 0 {
-        println!("Database is empty. Seeding mock data...");
+        println!("Database is empty. Seeding demo data for last week...");
         let now = Utc::now();
-        let today_start = now.with_hour(9).unwrap().with_minute(0).unwrap().with_second(0).unwrap();
+        let last_week = now - Duration::days(7);
+        let day_start = last_week.with_hour(9).unwrap().with_minute(0).unwrap().with_second(0).unwrap();
 
         let activities = vec![
-            (
-                "VS Code",
-                "Backend Refactoring",
-                today_start,
-                today_start + Duration::hours(2) + Duration::minutes(30),
-                (2 * 60 + 30) * 60,
-                "Coding",
-                1,
-            ),
-            (
-                "Safari",
-                "Stack Overflow",
-                today_start + Duration::hours(2) + Duration::minutes(30),
-                today_start + Duration::hours(3),
-                30 * 60,
-                "Coding",
-                1,
-            ),
-            (
-                "YouTube",
-                "Lofi Beats",
-                today_start + Duration::hours(3),
-                today_start + Duration::hours(3) + Duration::minutes(45),
-                45 * 60,
-                "Entertainment",
-                -1,
-            ),
+            ("VS Code", "Backend Refactoring", day_start, day_start + Duration::hours(2) + Duration::minutes(30), (2 * 60 + 30) * 60, "Coding", 1),
+            ("Safari", "Stack Overflow", day_start + Duration::hours(2) + Duration::minutes(30), day_start + Duration::hours(3), 30 * 60, "Coding", 1),
+            ("YouTube", "Lofi Beats", day_start + Duration::hours(3), day_start + Duration::hours(3) + Duration::minutes(45), 45 * 60, "Entertainment", -1),
+            ("Slack", "Team Standup", day_start + Duration::hours(4), day_start + Duration::hours(4) + Duration::minutes(15), 15 * 60, "Communication", 0),
+            ("VS Code", "Frontend Work", day_start + Duration::hours(4) + Duration::minutes(15), day_start + Duration::hours(7) + Duration::minutes(15), 3 * 60 * 60, "Coding", 1),
+            ("Spotify", "Focus Playlist", day_start + Duration::hours(4) + Duration::minutes(15), day_start + Duration::hours(7) + Duration::minutes(15), 3 * 60 * 60, "Entertainment", -1),
         ];
 
         let mut stmt = conn.prepare(
@@ -345,17 +324,9 @@ fn seed_database(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
         )?;
 
         for (app_name, title, start_time, end_time, duration, category, score) in activities {
-            stmt.execute(params![
-                app_name,
-                title,
-                start_time.to_rfc3339(),
-                end_time.to_rfc3339(),
-                duration,
-                category,
-                score
-            ])?;
+            stmt.execute(params![app_name, title, start_time.to_rfc3339(), end_time.to_rfc3339(), duration, category, score])?;
         }
-        println!("Mock data inserted.");
+        println!("Demo data inserted ({} activities from last week).", activities.len());
     } else {
         println!("Database already has {} activities.", count);
     }

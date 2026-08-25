@@ -75,6 +75,62 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev
 
 ---
 
+## 📲 Installing as Desktop App
+
+After building, you can install Screen Time as a desktop app with a launcher entry.
+
+### Quick Install (Dev Mode)
+
+Copy the launcher script and desktop entry:
+
+```bash
+# Create launcher script
+mkdir -p ~/.local/bin
+cat > ~/.local/bin/screen-time << 'EOF'
+#!/bin/bash
+cd /home/user/Projects/time-tracker/screen-time-app
+if ! lsof -ti:1420 &>/dev/null; then
+    npx vite dev --port 1420 &>/dev/null &
+    sleep 2
+fi
+exec /home/user/Projects/time-tracker/screen-time-app/src-tauri/target/debug/screen-time-app
+EOF
+chmod +x ~/.local/bin/screen-time
+
+# Create desktop entry (shows in app launcher / Walker)
+mkdir -p ~/.local/share/icons/hicolor/128x128/apps
+cp screen-time-app/src-tauri/icons/128x128.png ~/.local/share/icons/hicolor/128x128/apps/screen-time.png
+
+cat > ~/.local/share/applications/screen-time.desktop << 'EOF'
+[Desktop Entry]
+Type=Application
+Exec=/home/user/.local/bin/screen-time
+Icon=screen-time
+Terminal=false
+Categories=Utility;Monitor;
+Name=Screen Time
+GenericName=Screen Time Tracker
+Comment=Track and manage your screen time
+StartupNotify=true
+EOF
+```
+
+Then run `screen-time` from terminal or search "Screen Time" in Walker (SUPER+D).
+
+### Production Install
+
+Build the release binary first, then install the desktop entry pointing to it:
+
+```bash
+cd screen-time-app
+npm run tauri build
+
+# The .deb can be installed directly:
+sudo dpkg -i src-tauri/target/release/bundle/deb/screen-time-app_*.deb
+```
+
+---
+
 ## 📦 Building & Packaging
 
 This project is configured to output both a `.deb` package and an `.AppImage`.
