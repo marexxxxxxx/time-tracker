@@ -1,6 +1,6 @@
 <script lang="ts">
-    export let title: string = "Screen Time";
-    export let subtitle: string = "";
+    import ThemeToggle from './ThemeToggle.svelte';
+    let { title = "Screen Time", subtitle = "" }: { title?: string; subtitle?: string } = $props();
 </script>
 
 <header class="fixed top-0 right-0 left-[280px] z-40 bg-surface/60 dark:bg-inverse-surface/60 backdrop-blur-2xl border-b border-outline-variant/20 dark:border-outline/20 shadow-none flex items-center justify-between px-margin-desktop py-lg w-[calc(100%-280px)] h-[88px]">
@@ -12,6 +12,7 @@
     </div>
     <div class="flex items-center gap-md">
         <div class="flex items-center gap-sm">
+            <ThemeToggle />
             <button class="text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low p-sm rounded-full transition-colors flex items-center justify-center">
                 <span class="material-symbols-outlined">calendar_today</span>
             </button>
