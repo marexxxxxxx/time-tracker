@@ -6,6 +6,7 @@
     import CategoryDonut from '$lib/components/CategoryDonut.svelte';
     import TimeRangeSelector from '$lib/components/TimeRangeSelector.svelte';
     import { dailySummary, totalDuration, productivityScore, formatDuration } from '$lib/stores/activities';
+    import { selectedRange } from '$lib/stores/timeRange';
 
     let summary = $derived($dailySummary);
 
@@ -34,7 +35,7 @@
         <div class="col-span-12 lg:col-span-8 bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-lg shadow-[0_4px_20px_rgba(0,0,0,0.04)] dark:bg-surface-container dark:border-outline/20 flex flex-col">
             <div class="flex justify-between items-center mb-xl">
                 <h2 class="font-headline-md text-headline-md text-on-surface">Daily Usage</h2>
-                <TimeRangeSelector />
+                <TimeRangeSelector selected={$selectedRange} onselect={(opt) => selectedRange.set(opt as 'Day' | 'Week' | 'Month')} />
             </div>
             <div class="flex-1 min-h-[200px]">
                 {#if summary && summary.app_usage.length > 0}

@@ -3,7 +3,7 @@
     import PageHeader from '$lib/components/PageHeader.svelte';
     import AppBlockCard from '$lib/components/AppBlockCard.svelte';
     import AddAppModal from '$lib/components/AddAppModal.svelte';
-    import { blockedApps, toggleBlockedApp, fetchBlockedApps } from '$lib/stores/blockedApps';
+    import { blockedApps, toggleBlockedApp, removeBlockedApp, fetchBlockedApps } from '$lib/stores/blockedApps';
     import { onMount } from 'svelte';
 
     let showModal = $state(false);
@@ -55,10 +55,10 @@
         {/if}
 
         {#if socialApps.length > 0}
-            <section class="bg-surface rounded-xl border border-outline-variant/40 glass-shadow overflow-hidden">
-                <div class="px-lg py-md border-b border-outline-variant/20 bg-surface-container-low/50 flex justify-between items-center">
+            <section class="bg-surface rounded-xl border border-outline-variant/40 dark:border-outline/20 glass-shadow overflow-hidden">
+                <div class="px-lg py-md border-b border-outline-variant/20 dark:border-outline/10 bg-surface-container-low/50 dark:bg-surface-container/50 flex justify-between items-center">
                     <h3 class="font-label-md text-label-md font-semibold text-on-surface uppercase tracking-wider">Social Media</h3>
-                    <span class="font-label-sm text-label-sm text-on-surface-variant bg-surface-variant/50 px-sm py-xs rounded-md">{socialApps.length} Apps</span>
+                    <span class="font-label-sm text-label-sm text-on-surface-variant bg-surface-variant/50 dark:bg-surface-container-highest/50 px-sm py-xs rounded-md">{socialApps.length} Apps</span>
                 </div>
                 <div class="divide-y divide-outline-variant/20">
                     {#each socialApps as app}
@@ -69,6 +69,7 @@
                             limit={app.is_blocked ? "Blocked" : "Allowed"}
                             isBlocked={app.is_blocked}
                             onToggle={() => toggleBlockedApp(app.id)}
+                            onRemove={() => removeBlockedApp(app.id)}
                         />
                     {/each}
                 </div>
@@ -76,10 +77,10 @@
         {/if}
 
         {#if entertainmentApps.length > 0}
-            <section class="bg-surface rounded-xl border border-outline-variant/40 glass-shadow overflow-hidden">
-                <div class="px-lg py-md border-b border-outline-variant/20 bg-surface-container-low/50 flex justify-between items-center">
+            <section class="bg-surface rounded-xl border border-outline-variant/40 dark:border-outline/20 glass-shadow overflow-hidden">
+                <div class="px-lg py-md border-b border-outline-variant/20 dark:border-outline/10 bg-surface-container-low/50 dark:bg-surface-container/50 flex justify-between items-center">
                     <h3 class="font-label-md text-label-md font-semibold text-on-surface uppercase tracking-wider">Entertainment</h3>
-                    <span class="font-label-sm text-label-sm text-on-surface-variant bg-surface-variant/50 px-sm py-xs rounded-md">{entertainmentApps.length} Apps</span>
+                    <span class="font-label-sm text-label-sm text-on-surface-variant bg-surface-variant/50 dark:bg-surface-container-highest/50 px-sm py-xs rounded-md">{entertainmentApps.length} Apps</span>
                 </div>
                 <div class="divide-y divide-outline-variant/20">
                     {#each entertainmentApps as app}
@@ -90,6 +91,7 @@
                             limit={app.is_blocked ? "Blocked" : "Allowed"}
                             isBlocked={app.is_blocked}
                             onToggle={() => toggleBlockedApp(app.id)}
+                            onRemove={() => removeBlockedApp(app.id)}
                         />
                     {/each}
                 </div>
@@ -97,10 +99,10 @@
         {/if}
 
         {#if otherApps.length > 0}
-            <section class="bg-surface rounded-xl border border-outline-variant/40 glass-shadow overflow-hidden">
-                <div class="px-lg py-md border-b border-outline-variant/20 bg-surface-container-low/50 flex justify-between items-center">
+            <section class="bg-surface rounded-xl border border-outline-variant/40 dark:border-outline/20 glass-shadow overflow-hidden">
+                <div class="px-lg py-md border-b border-outline-variant/20 dark:border-outline/10 bg-surface-container-low/50 dark:bg-surface-container/50 flex justify-between items-center">
                     <h3 class="font-label-md text-label-md font-semibold text-on-surface uppercase tracking-wider">Other</h3>
-                    <span class="font-label-sm text-label-sm text-on-surface-variant bg-surface-variant/50 px-sm py-xs rounded-md">{otherApps.length} Apps</span>
+                    <span class="font-label-sm text-label-sm text-on-surface-variant bg-surface-variant/50 dark:bg-surface-container-highest/50 px-sm py-xs rounded-md">{otherApps.length} Apps</span>
                 </div>
                 <div class="divide-y divide-outline-variant/20">
                     {#each otherApps as app}
@@ -111,6 +113,7 @@
                             limit={app.is_blocked ? "Blocked" : "Allowed"}
                             isBlocked={app.is_blocked}
                             onToggle={() => toggleBlockedApp(app.id)}
+                            onRemove={() => removeBlockedApp(app.id)}
                         />
                     {/each}
                 </div>

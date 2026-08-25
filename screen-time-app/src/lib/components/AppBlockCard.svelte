@@ -6,6 +6,7 @@
         limit,
         isBlocked,
         onToggle,
+        onRemove,
         usage = "",
         usagePct = -1
     }: {
@@ -15,6 +16,7 @@
         limit: string;
         isBlocked: boolean;
         onToggle: () => void;
+        onRemove?: () => void;
         usage?: string;
         usagePct?: number;
     } = $props();
@@ -42,6 +44,15 @@
                 <span class="material-symbols-outlined text-[14px]">lock</span>
                 Blocked
             </p>
+        {/if}
+        {#if onRemove}
+            <button
+                class="p-xs rounded-lg text-on-surface-variant hover:text-error hover:bg-error/10 transition-colors"
+                onclick={onRemove}
+                aria-label="Remove {appName}"
+            >
+                <span class="material-symbols-outlined text-[18px]">delete</span>
+            </button>
         {/if}
         <button
             class="relative inline-block w-12 align-middle select-none transition duration-200 ease-in"

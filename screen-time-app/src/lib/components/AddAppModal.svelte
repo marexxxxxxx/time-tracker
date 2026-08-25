@@ -17,7 +17,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
     <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/40" onclick={onclose}>
         <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-        <div class="bg-surface-container-lowest border border-outline-variant/30 rounded-2xl p-xl w-full max-w-md shadow-xl" onclick={(e) => e.stopPropagation()}>
+        <div class="bg-surface-container-lowest dark:bg-surface-container border border-outline-variant/30 dark:border-outline/20 rounded-2xl p-xl w-full max-w-md shadow-xl" onclick={(e) => e.stopPropagation()}>
             <h3 class="font-headline-md text-headline-md text-on-surface mb-lg">Block an App</h3>
             <form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
                 <label class="font-label-md text-label-md text-on-surface-variant block mb-sm">Application Name</label>
