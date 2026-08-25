@@ -1,11 +1,13 @@
 <script lang="ts">
-    let { selected = "Day", options = ["Day", "Week", "Month"] }: {
+    let { selected = "Day", options = ["Day", "Week", "Month"], onselect }: {
         selected?: string;
         options?: string[];
+        onselect?: (opt: string) => void;
     } = $props();
 
     function select(opt: string) {
         selected = opt;
+        onselect?.(opt);
     }
 </script>
 
