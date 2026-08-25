@@ -323,10 +323,11 @@ fn seed_database(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
             "INSERT INTO activities (app_name, title, start_time, end_time, duration, category, productivity_score) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
         )?;
 
-        for (app_name, title, start_time, end_time, duration, category, score) in activities {
+        let count = activities.len();
+        for (app_name, title, start_time, end_time, duration, category, score) in &activities {
             stmt.execute(params![app_name, title, start_time.to_rfc3339(), end_time.to_rfc3339(), duration, category, score])?;
         }
-        println!("Demo data inserted ({} activities from last week).", activities.len());
+        println!("Demo data inserted ({} activities from last week).", count);
     } else {
         println!("Database already has {} activities.", count);
     }
