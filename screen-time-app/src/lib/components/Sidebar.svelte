@@ -36,8 +36,8 @@
             <span class="material-symbols-outlined" style={$page.url.pathname.includes('/settings') ? "font-variation-settings: 'FILL' 1;" : ""}>settings</span>
             <span class="font-label-md text-label-md">Settings</span>
         </a>
-        <a class="text-on-surface-variant hover:bg-surface-container-low rounded-lg px-md py-sm flex items-center gap-sm transition-colors duration-200" href="#">
-            <span class="material-symbols-outlined">help</span>
+        <a class="{$page.url.pathname.includes('/help') ? 'bg-primary/10 text-primary font-bold' : 'text-on-surface-variant hover:bg-surface-container-low'} rounded-lg px-md py-sm flex items-center gap-sm transition-colors duration-200" href="/help">
+            <span class="material-symbols-outlined" style={$page.url.pathname.includes('/help') ? "font-variation-settings: 'FILL' 1;" : ""}>help</span>
             <span class="font-label-md text-label-md">Help</span>
         </a>
     </div>
