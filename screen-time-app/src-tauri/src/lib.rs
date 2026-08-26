@@ -551,6 +551,16 @@ fn migrate_browser_app_names(conn: &Connection) -> Result<(), Box<dyn std::error
             cleaned.clone()
         };
 
+        // Fix terminal-prompt app_names (e.g. "user@host: ~/dir" → "Terminal")
+        if site == *app_name && app_name.contains('@') && app_name.contains('~') {
+            conn.execute(
+                "UPDATE activities SET app_name = 'Terminal' WHERE id = ?1",
+                params![id],
+            )?;
+            updated += 1;
+            continue;
+        }
+
         // Update if the extracted site name differs from current app_name
         if !site.is_empty() && site != *app_name {
             conn.execute(
