@@ -8,7 +8,6 @@
     import { onMount } from 'svelte';
 
     let showModal = $state(false);
-    let showLimitEditor = $state(false);
     let editingApp = $state<{ id: number; name: string; daily: number; weekly: number; enabled: boolean } | null>(null);
 
     onMount(() => {
@@ -25,6 +24,7 @@
     }
 
     function openLimitEditor(app: { id: number; app_name: string; daily_limit_minutes: number; weekly_limit_minutes: number; limit_enabled: boolean }) {
+        console.log('[LimitEditor] openLimitEditor called for', app.app_name, app);
         editingApp = {
             id: app.id,
             name: app.app_name,
@@ -32,14 +32,12 @@
             weekly: app.weekly_limit_minutes,
             enabled: app.limit_enabled,
         };
-        showLimitEditor = true;
     }
 
     function handleSaveLimits(daily: number, weekly: number, enabled: boolean) {
         if (editingApp) {
             updateAppLimits(editingApp.id, daily, weekly, enabled);
         }
-        showLimitEditor = false;
         editingApp = null;
     }
 
@@ -157,15 +155,13 @@
 
     <AddAppModal open={showModal} onclose={() => showModal = false} />
 
-    {#if editingApp}
-        <LimitEditor
-            open={showLimitEditor}
-            appName={editingApp.name}
-            dailyLimit={editingApp.daily}
-            weeklyLimit={editingApp.weekly}
-            limitEnabled={editingApp.enabled}
-            onsave={handleSaveLimits}
-            onclose={() => { showLimitEditor = false; editingApp = null; }}
-        />
-    {/if}
+    <LimitEditor
+        open={editingApp !== null}
+        appName={editingApp?.name ?? ''}
+        dailyLimit={editingApp?.daily ?? 0}
+        weeklyLimit={editingApp?.weekly ?? 0}
+        limitEnabled={editingApp?.enabled ?? false}
+        onsave={handleSaveLimits}
+        onclose={() => { editingApp = null; }}
+    />
 </main>

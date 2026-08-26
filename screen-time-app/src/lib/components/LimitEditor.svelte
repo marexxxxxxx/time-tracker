@@ -22,6 +22,7 @@
     let enabled = $state(limitEnabled);
 
     $effect(() => {
+        console.log('[LimitEditor] effect: open=', open, 'appName=', appName);
         if (open) {
             daily = dailyLimit;
             weekly = weeklyLimit;

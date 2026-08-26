@@ -70,7 +70,7 @@
         {#if onEditLimits}
             <button
                 class="p-xs rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low dark:hover:bg-surface-container transition-colors"
-                onclick={onEditLimits}
+                onclick={() => { alert('TUNE CLICKED: ' + appName); onEditLimits?.(); }}
                 aria-label="Edit limits for {appName}"
             >
                 <span class="material-symbols-outlined text-[18px]">tune</span>
