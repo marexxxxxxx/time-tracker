@@ -65,6 +65,9 @@ pub struct BlockedApp {
     pub id: i64,
     pub app_name: String,
     pub is_blocked: bool,
+    pub daily_limit_minutes: i64,
+    pub weekly_limit_minutes: i64,
+    pub limit_enabled: bool,
 }
 
 // AppState to hold the rusqlite connection
@@ -230,13 +233,16 @@ fn get_deep_work_sessions(state: State<'_, AppState>) -> Result<Vec<DeepWorkSess
 fn get_blocked_apps(state: State<'_, AppState>) -> Result<Vec<BlockedApp>, String> {
     let conn_guard = state.conn.lock().unwrap();
     if let Some(conn) = conn_guard.as_ref() {
-        let mut stmt = conn.prepare("SELECT id, app_name, is_blocked FROM blocked_apps")
+        let mut stmt = conn.prepare("SELECT id, app_name, is_blocked, daily_limit_minutes, weekly_limit_minutes, limit_enabled FROM blocked_apps")
             .map_err(|e| e.to_string())?;
         let apps = stmt.query_map([], |row| {
             Ok(BlockedApp {
                 id: row.get(0)?,
                 app_name: row.get(1)?,
                 is_blocked: row.get::<_, i64>(2)? == 1,
+                daily_limit_minutes: row.get(3)?,
+                weekly_limit_minutes: row.get(4)?,
+                limit_enabled: row.get::<_, i64>(5)? == 1,
             })
         }).map_err(|e| e.to_string())?
           .filter_map(|r| r.ok()).collect();
@@ -256,7 +262,7 @@ fn add_blocked_app(state: State<'_, AppState>, app_name: String) -> Result<Block
             return Err("App already blocked".to_string());
         }
         let id = conn.last_insert_rowid();
-        Ok(BlockedApp { id, app_name, is_blocked: true })
+        Ok(BlockedApp { id, app_name, is_blocked: true, daily_limit_minutes: 0, weekly_limit_minutes: 0, limit_enabled: false })
     } else {
         Err("Database not initialized".to_string())
     }
@@ -280,14 +286,87 @@ fn toggle_blocked_app(state: State<'_, AppState>, id: i64) -> Result<BlockedApp,
     if let Some(conn) = conn_guard.as_ref() {
         conn.execute("UPDATE blocked_apps SET is_blocked = NOT is_blocked WHERE id = ?1", params![id])
             .map_err(|e| e.to_string())?;
-        let app = conn.query_row("SELECT id, app_name, is_blocked FROM blocked_apps WHERE id = ?1", params![id], |row| {
+        let app = conn.query_row("SELECT id, app_name, is_blocked, daily_limit_minutes, weekly_limit_minutes, limit_enabled FROM blocked_apps WHERE id = ?1", params![id], |row| {
             Ok(BlockedApp {
                 id: row.get(0)?,
                 app_name: row.get(1)?,
                 is_blocked: row.get::<_, i64>(2)? == 1,
+                daily_limit_minutes: row.get(3)?,
+                weekly_limit_minutes: row.get(4)?,
+                limit_enabled: row.get::<_, i64>(5)? == 1,
             })
         }).map_err(|e| e.to_string())?;
         Ok(app)
+    } else {
+        Err("Database not initialized".to_string())
+    }
+}
+
+#[tauri::command]
+fn update_app_limits(
+    state: State<'_, AppState>,
+    id: i64,
+    daily_limit_minutes: i64,
+    weekly_limit_minutes: i64,
+    limit_enabled: bool,
+) -> Result<BlockedApp, String> {
+    let conn_guard = state.conn.lock().unwrap();
+    if let Some(conn) = conn_guard.as_ref() {
+        conn.execute(
+            "UPDATE blocked_apps SET daily_limit_minutes = ?1, weekly_limit_minutes = ?2, limit_enabled = ?3 WHERE id = ?4",
+            params![daily_limit_minutes, weekly_limit_minutes, limit_enabled as i64, id],
+        ).map_err(|e| e.to_string())?;
+        let app = conn.query_row(
+            "SELECT id, app_name, is_blocked, daily_limit_minutes, weekly_limit_minutes, limit_enabled FROM blocked_apps WHERE id = ?1",
+            params![id],
+            |row| {
+                Ok(BlockedApp {
+                    id: row.get(0)?,
+                    app_name: row.get(1)?,
+                    is_blocked: row.get::<_, i64>(2)? == 1,
+                    daily_limit_minutes: row.get(3)?,
+                    weekly_limit_minutes: row.get(4)?,
+                    limit_enabled: row.get::<_, i64>(5)? == 1,
+                })
+            },
+        ).map_err(|e| e.to_string())?;
+        Ok(app)
+    } else {
+        Err("Database not initialized".to_string())
+    }
+}
+
+#[tauri::command]
+fn get_app_daily_usage(state: State<'_, AppState>, app_name: String) -> Result<i64, String> {
+    let conn_guard = state.conn.lock().unwrap();
+    if let Some(conn) = conn_guard.as_ref() {
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        let start = format!("{}T00:00:00", today);
+        let end = format!("{}T23:59:59", today);
+        let total: i64 = conn.query_row(
+            "SELECT COALESCE(SUM(duration), 0) FROM activities WHERE app_name = ?1 AND start_time >= ?2 AND start_time <= ?3",
+            params![app_name, start, end],
+            |row| row.get(0),
+        ).map_err(|e| e.to_string())?;
+        Ok(total)
+    } else {
+        Err("Database not initialized".to_string())
+    }
+}
+
+#[tauri::command]
+fn get_app_weekly_usage(state: State<'_, AppState>, app_name: String) -> Result<i64, String> {
+    let conn_guard = state.conn.lock().unwrap();
+    if let Some(conn) = conn_guard.as_ref() {
+        let today = Utc::now();
+        let week_start = today - chrono::Duration::days(today.format("%u").to_string().parse::<i64>().unwrap() - 1);
+        let start = week_start.format("%Y-%m-%dT00:00:00").to_string();
+        let total: i64 = conn.query_row(
+            "SELECT COALESCE(SUM(duration), 0) FROM activities WHERE app_name = ?1 AND start_time >= ?2",
+            params![app_name, start],
+            |row| row.get(0),
+        ).map_err(|e| e.to_string())?;
+        Ok(total)
     } else {
         Err("Database not initialized".to_string())
     }
@@ -315,6 +394,49 @@ pub fn is_app_blocked(conn: &Connection, app_name: &str) -> bool {
         }
     }
     false
+}
+
+pub struct AppLimitConfig {
+    pub daily_limit_minutes: i64,
+    pub weekly_limit_minutes: i64,
+    pub limit_enabled: bool,
+}
+
+pub fn get_app_limit_config(conn: &Connection, app_name: &str) -> Option<AppLimitConfig> {
+    conn.query_row(
+        "SELECT daily_limit_minutes, weekly_limit_minutes, limit_enabled FROM blocked_apps WHERE LOWER(app_name) = LOWER(?1)",
+        params![app_name],
+        |row| {
+            Ok(AppLimitConfig {
+                daily_limit_minutes: row.get(0)?,
+                weekly_limit_minutes: row.get(1)?,
+                limit_enabled: row.get::<_, i64>(2)? == 1,
+            })
+        },
+    ).ok()
+}
+
+pub fn get_app_usage_today(conn: &Connection, app_name: &str) -> i64 {
+    let today = Utc::now().format("%Y-%m-%d").to_string();
+    let start = format!("{}T00:00:00", today);
+    let end = format!("{}T23:59:59", today);
+    conn.query_row(
+        "SELECT COALESCE(SUM(duration), 0) FROM activities WHERE app_name = ?1 AND start_time >= ?2 AND start_time <= ?3",
+        params![app_name, start, end],
+        |row| row.get(0),
+    ).unwrap_or(0)
+}
+
+pub fn get_app_usage_this_week(conn: &Connection, app_name: &str) -> i64 {
+    let today = Utc::now();
+    let weekday = today.format("%u").to_string().parse::<i64>().unwrap_or(1);
+    let week_start = today - chrono::Duration::days(weekday - 1);
+    let start = week_start.format("%Y-%m-%dT00:00:00").to_string();
+    conn.query_row(
+        "SELECT COALESCE(SUM(duration), 0) FROM activities WHERE app_name = ?1 AND start_time >= ?2",
+        params![app_name, start],
+        |row| row.get(0),
+    ).unwrap_or(0)
 }
 
 fn seed_database(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
@@ -382,11 +504,64 @@ fn init_db(db_path: &std::path::Path) -> Result<Connection, Box<dyn std::error::
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             app_name TEXT NOT NULL UNIQUE,
             is_blocked INTEGER NOT NULL DEFAULT 1,
+            daily_limit_minutes INTEGER NOT NULL DEFAULT 0,
+            weekly_limit_minutes INTEGER NOT NULL DEFAULT 0,
+            limit_enabled INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
     ", [])?;
 
+    // One-time migration: clean up browser app names that still contain full titles
+    migrate_browser_app_names(&conn)?;
+
+    // Migration: add limit columns to blocked_apps if missing
+    let _ = conn.execute("ALTER TABLE blocked_apps ADD COLUMN daily_limit_minutes INTEGER NOT NULL DEFAULT 0", []);
+    let _ = conn.execute("ALTER TABLE blocked_apps ADD COLUMN weekly_limit_minutes INTEGER NOT NULL DEFAULT 0", []);
+    let _ = conn.execute("ALTER TABLE blocked_apps ADD COLUMN limit_enabled INTEGER NOT NULL DEFAULT 0", []);
+
     Ok(conn)
+}
+
+fn migrate_browser_app_names(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
+    use crate::tracker::BROWSER_SUFFIXES;
+
+    let mut stmt = conn.prepare("SELECT id, app_name, title FROM activities")?;
+    let rows: Vec<(i64, String, String)> = stmt.query_map([], |row| {
+        Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+    })?.filter_map(|r| r.ok()).collect();
+
+    let mut updated = 0;
+    for (id, app_name, title) in &rows {
+        // Try to extract site name from title using browser suffix stripping
+        let mut cleaned = title.clone();
+        for suffix in BROWSER_SUFFIXES {
+            cleaned = cleaned.replace(suffix, "");
+        }
+        let cleaned = cleaned.trim().to_string();
+        if cleaned.is_empty() { continue; }
+
+        // Get the site name (last segment after " — " or " - ")
+        let site = if let Some(pos) = cleaned.rfind(" — ") {
+            cleaned[pos + 3..].trim().to_string()
+        } else if let Some(pos) = cleaned.rfind(" - ") {
+            cleaned[pos + 3..].trim().to_string()
+        } else {
+            cleaned.clone()
+        };
+
+        // Update if the extracted site name differs from current app_name
+        if !site.is_empty() && site != *app_name {
+            conn.execute(
+                "UPDATE activities SET app_name = ?1 WHERE id = ?2",
+                params![site, id],
+            )?;
+            updated += 1;
+        }
+    }
+    if updated > 0 {
+        println!("Migrated {} browser app names to site names.", updated);
+    }
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -420,7 +595,7 @@ pub fn run() {
                         *state.conn.lock().unwrap() = shared_conn.lock().unwrap().take();
 
                         // Start Window Tracking by cloning the state's Arc
-                        tracker::start_window_tracking(Arc::clone(&state.conn));
+                        tracker::start_window_tracking(Arc::clone(&state.conn), app_handle.clone());
                     }
                     Err(e) => {
                         eprintln!("Failed to initialize database: {}", e);
@@ -442,6 +617,9 @@ pub fn run() {
             add_blocked_app,
             remove_blocked_app,
             toggle_blocked_app,
+            update_app_limits,
+            get_app_daily_usage,
+            get_app_weekly_usage,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

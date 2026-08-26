@@ -5,6 +5,9 @@ export interface BlockedApp {
     id: number;
     app_name: string;
     is_blocked: boolean;
+    daily_limit_minutes: number;
+    weekly_limit_minutes: number;
+    limit_enabled: boolean;
 }
 
 export const blockedApps = writable<BlockedApp[]>([]);
@@ -42,5 +45,32 @@ export async function toggleBlockedApp(id: number) {
         await fetchBlockedApps();
     } catch (e) {
         console.error("Failed to toggle blocked app:", e);
+    }
+}
+
+export async function updateAppLimits(id: number, dailyLimitMinutes: number, weeklyLimitMinutes: number, limitEnabled: boolean) {
+    try {
+        await invoke('update_app_limits', { id, dailyLimitMinutes, weeklyLimitMinutes, limitEnabled });
+        await fetchBlockedApps();
+    } catch (e) {
+        console.error("Failed to update app limits:", e);
+    }
+}
+
+export async function getAppDailyUsage(appName: string): Promise<number> {
+    try {
+        return await invoke('get_app_daily_usage', { appName });
+    } catch (e) {
+        console.error("Failed to get daily usage:", e);
+        return 0;
+    }
+}
+
+export async function getAppWeeklyUsage(appName: string): Promise<number> {
+    try {
+        return await invoke('get_app_weekly_usage', { appName });
+    } catch (e) {
+        console.error("Failed to get weekly usage:", e);
+        return 0;
     }
 }

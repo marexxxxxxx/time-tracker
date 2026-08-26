@@ -7,6 +7,10 @@
         isBlocked,
         onToggle,
         onRemove,
+        onEditLimits,
+        dailyLimit = 0,
+        weeklyLimit = 0,
+        limitEnabled = false,
         usage = "",
         usagePct = -1
     }: {
@@ -17,9 +21,21 @@
         isBlocked: boolean;
         onToggle: () => void;
         onRemove?: () => void;
+        onEditLimits?: () => void;
+        dailyLimit?: number;
+        weeklyLimit?: number;
+        limitEnabled?: boolean;
         usage?: string;
         usagePct?: number;
     } = $props();
+
+    let limitText = $derived.by(() => {
+        if (!limitEnabled) return limit;
+        const parts: string[] = [];
+        if (dailyLimit > 0) parts.push(`${dailyLimit}m/day`);
+        if (weeklyLimit > 0) parts.push(`${weeklyLimit}m/week`);
+        return parts.length > 0 ? parts.join(" · ") : limit;
+    });
 </script>
 
 <div class="flex items-center justify-between p-lg hover:bg-surface-container-lowest dark:hover:bg-surface-container transition-colors {isBlocked ? 'opacity-60' : ''}">
@@ -29,7 +45,7 @@
         </div>
         <div>
             <h4 class="font-body-md text-body-md font-medium text-on-surface">{appName}</h4>
-            <p class="font-label-sm text-label-sm text-on-surface-variant">{limit}</p>
+            <p class="font-label-sm text-label-sm text-on-surface-variant">{limitText}</p>
         </div>
     </div>
     <div class="flex items-center gap-md">
@@ -44,6 +60,21 @@
                 <span class="material-symbols-outlined text-[14px]">lock</span>
                 Blocked
             </p>
+        {/if}
+        {#if limitEnabled && !isBlocked}
+            <p class="font-label-sm text-label-sm text-tertiary w-auto mr-4 flex items-center gap-xs">
+                <span class="material-symbols-outlined text-[14px]">schedule</span>
+                Limited
+            </p>
+        {/if}
+        {#if onEditLimits}
+            <button
+                class="p-xs rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low dark:hover:bg-surface-container transition-colors"
+                onclick={onEditLimits}
+                aria-label="Edit limits for {appName}"
+            >
+                <span class="material-symbols-outlined text-[18px]">tune</span>
+            </button>
         {/if}
         {#if onRemove}
             <button

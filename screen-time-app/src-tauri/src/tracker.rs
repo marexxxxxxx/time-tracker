@@ -3,9 +3,11 @@ use std::time::Duration;
 use chrono::Utc;
 use rusqlite::{Connection, params};
 use std::sync::{Arc, Mutex};
+use tauri::{Emitter, AppHandle};
 use tokio::time::interval;
 
 const BLOCKED_TITLE_MARKER: &str = "Blocked — ScreenTime";
+const WARNING_THRESHOLD_SECS: i64 = 5 * 60; // Warn 5 minutes before limit
 
 #[derive(Debug, Clone)]
 struct WindowInfo {
@@ -14,12 +16,13 @@ struct WindowInfo {
     title: String,
 }
 
-pub fn start_window_tracking(conn: Arc<Mutex<Option<Connection>>>) {
+pub fn start_window_tracking(conn: Arc<Mutex<Option<Connection>>>, app_handle: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut interval = interval(Duration::from_secs(3));
         let mut current_window: Option<WindowInfo> = None;
         let mut current_start = Utc::now();
         let mut current_id: Option<i64> = None;
+        let mut warned_apps: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         let session_type = std::env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "x11".to_string());
 
@@ -42,6 +45,61 @@ pub fn start_window_tracking(conn: Arc<Mutex<Option<Connection>>>) {
                             current_window = None;
                             current_id = None;
                             continue;
+                        }
+                    }
+                }
+
+                // Check time limits before recording
+                if let Ok(db_guard) = conn.lock() {
+                    if let Some(db) = db_guard.as_ref() {
+                        if let Some(config) = crate::get_app_limit_config(db, &active.app_name) {
+                            if config.limit_enabled {
+                                let daily_secs = crate::get_app_usage_today(db, &active.app_name);
+                                let daily_limit_secs = config.daily_limit_minutes * 60;
+                                let weekly_secs = crate::get_app_usage_this_week(db, &active.app_name);
+                                let weekly_limit_secs = config.weekly_limit_minutes * 60;
+
+                                let daily_over = config.daily_limit_minutes > 0 && daily_secs >= daily_limit_secs;
+                                let weekly_over = config.weekly_limit_minutes > 0 && weekly_secs >= weekly_limit_secs;
+
+                                if daily_over || weekly_over {
+                                    // Limit exceeded — block the app
+                                    if !active.title.contains(BLOCKED_TITLE_MARKER) {
+                                        let active_clone = active.clone();
+                                        let st = session_type.clone();
+                                        tokio::task::spawn_blocking(move || {
+                                            handle_blocked_app(&active_clone, &st);
+                                        });
+                                    }
+                                    current_window = None;
+                                    current_id = None;
+                                    warned_apps.remove(&active.app_name);
+                                    continue;
+                                }
+
+                                // Warning threshold check (5 min before limit)
+                                let daily_warn = config.daily_limit_minutes > 0
+                                    && daily_secs >= daily_limit_secs - WARNING_THRESHOLD_SECS
+                                    && daily_secs < daily_limit_secs;
+                                let weekly_warn = config.weekly_limit_minutes > 0
+                                    && weekly_secs >= weekly_limit_secs - WARNING_THRESHOLD_SECS
+                                    && weekly_secs < weekly_limit_secs;
+
+                                if (daily_warn || weekly_warn) && !warned_apps.contains(&active.app_name) {
+                                    warned_apps.insert(active.app_name.clone());
+                                    let remaining = if daily_warn {
+                                        (daily_limit_secs - daily_secs) / 60
+                                    } else {
+                                        (weekly_limit_secs - weekly_secs) / 60
+                                    };
+                                    let limit_type = if daily_warn { "daily" } else { "weekly" };
+                                    let _ = app_handle.emit("limit-warning", serde_json::json!({
+                                        "app_name": active.app_name,
+                                        "limit_type": limit_type,
+                                        "remaining_minutes": remaining,
+                                    }));
+                                }
+                            }
                         }
                     }
                 }
@@ -176,28 +234,37 @@ fn url_encode(s: &str) -> String {
 
 const BROWSER_CLASSES: &[&str] = &["chromium", "firefox", "google-chrome", "brave-browser", "vivaldi", "opera", "microsoft-edge"];
 
+pub const BROWSER_SUFFIXES: &[&str] = &[
+    " — Mozilla Firefox", " - Mozilla Firefox",
+    " — Chromium", " - Chromium",
+    " — Google Chrome", " - Google Chrome",
+    " — Brave", " - Brave",
+    " — Vivaldi", " - Vivaldi",
+    " — Opera", " - Opera",
+    " — Microsoft Edge", " - Microsoft Edge",
+];
+
 fn extract_browser_site(app_name: &str, title: &str) -> Option<String> {
     let lower = app_name.to_lowercase();
     if !BROWSER_CLASSES.iter().any(|b| lower.contains(b)) {
         return None;
     }
-    let cleaned = title
-        .replace(" — Mozilla Firefox", "")
-        .replace(" - Mozilla Firefox", "")
-        .replace(" — Chromium", "")
-        .replace(" - Chromium", "")
-        .replace(" — Google Chrome", "")
-        .replace(" - Google Chrome", "")
-        .replace(" — Brave", "")
-        .replace(" - Brave", "")
-        .replace(" — Vivaldi", "")
-        .replace(" - Vivaldi", "")
-        .replace(" — Opera", "")
-        .replace(" - Opera", "")
-        .replace(" — Microsoft Edge", "")
-        .replace(" - Microsoft Edge", "");
+    let mut cleaned = title.to_string();
+    for suffix in BROWSER_SUFFIXES {
+        cleaned = cleaned.replace(suffix, "");
+    }
     let cleaned = cleaned.trim().to_string();
-    if cleaned.is_empty() { None } else { Some(cleaned) }
+    if cleaned.is_empty() { return None; }
+    // Extract just the site name: last segment after " — " or " - "
+    if let Some(pos) = cleaned.rfind(" — ") {
+        let site = cleaned[pos + 3..].trim().to_string();
+        if !site.is_empty() { return Some(site); }
+    }
+    if let Some(pos) = cleaned.rfind(" - ") {
+        let site = cleaned[pos + 3..].trim().to_string();
+        if !site.is_empty() { return Some(site); }
+    }
+    Some(cleaned)
 }
 
 fn categorize_app(app_name: &str, title: &str) -> String {

@@ -3,10 +3,13 @@
     import PageHeader from '$lib/components/PageHeader.svelte';
     import AppBlockCard from '$lib/components/AppBlockCard.svelte';
     import AddAppModal from '$lib/components/AddAppModal.svelte';
-    import { blockedApps, toggleBlockedApp, removeBlockedApp, fetchBlockedApps } from '$lib/stores/blockedApps';
+    import LimitEditor from '$lib/components/LimitEditor.svelte';
+    import { blockedApps, toggleBlockedApp, removeBlockedApp, fetchBlockedApps, updateAppLimits } from '$lib/stores/blockedApps';
     import { onMount } from 'svelte';
 
     let showModal = $state(false);
+    let showLimitEditor = $state(false);
+    let editingApp = $state<{ id: number; name: string; daily: number; weekly: number; enabled: boolean } | null>(null);
 
     onMount(() => {
         fetchBlockedApps();
@@ -19,6 +22,25 @@
         if (social.some(s => lower.includes(s))) return 'Social Media';
         if (entertainment.some(e => lower.includes(e))) return 'Entertainment';
         return 'Other';
+    }
+
+    function openLimitEditor(app: { id: number; app_name: string; daily_limit_minutes: number; weekly_limit_minutes: number; limit_enabled: boolean }) {
+        editingApp = {
+            id: app.id,
+            name: app.app_name,
+            daily: app.daily_limit_minutes,
+            weekly: app.weekly_limit_minutes,
+            enabled: app.limit_enabled,
+        };
+        showLimitEditor = true;
+    }
+
+    function handleSaveLimits(daily: number, weekly: number, enabled: boolean) {
+        if (editingApp) {
+            updateAppLimits(editingApp.id, daily, weekly, enabled);
+        }
+        showLimitEditor = false;
+        editingApp = null;
     }
 
     let socialApps = $derived(
@@ -68,8 +90,12 @@
                             iconBg="rgba(0,0,0,0.05)"
                             limit={app.is_blocked ? "Blocked" : "Allowed"}
                             isBlocked={app.is_blocked}
+                            dailyLimit={app.daily_limit_minutes}
+                            weeklyLimit={app.weekly_limit_minutes}
+                            limitEnabled={app.limit_enabled}
                             onToggle={() => toggleBlockedApp(app.id)}
                             onRemove={() => removeBlockedApp(app.id)}
+                            onEditLimits={() => openLimitEditor(app)}
                         />
                     {/each}
                 </div>
@@ -90,8 +116,12 @@
                             iconBg="rgba(255,0,0,0.1)"
                             limit={app.is_blocked ? "Blocked" : "Allowed"}
                             isBlocked={app.is_blocked}
+                            dailyLimit={app.daily_limit_minutes}
+                            weeklyLimit={app.weekly_limit_minutes}
+                            limitEnabled={app.limit_enabled}
                             onToggle={() => toggleBlockedApp(app.id)}
                             onRemove={() => removeBlockedApp(app.id)}
+                            onEditLimits={() => openLimitEditor(app)}
                         />
                     {/each}
                 </div>
@@ -112,8 +142,12 @@
                             iconBg="rgba(0,0,0,0.05)"
                             limit={app.is_blocked ? "Blocked" : "Allowed"}
                             isBlocked={app.is_blocked}
+                            dailyLimit={app.daily_limit_minutes}
+                            weeklyLimit={app.weekly_limit_minutes}
+                            limitEnabled={app.limit_enabled}
                             onToggle={() => toggleBlockedApp(app.id)}
                             onRemove={() => removeBlockedApp(app.id)}
+                            onEditLimits={() => openLimitEditor(app)}
                         />
                     {/each}
                 </div>
@@ -122,4 +156,16 @@
     </div>
 
     <AddAppModal open={showModal} onclose={() => showModal = false} />
+
+    {#if editingApp}
+        <LimitEditor
+            open={showLimitEditor}
+            appName={editingApp.name}
+            dailyLimit={editingApp.daily}
+            weeklyLimit={editingApp.weekly}
+            limitEnabled={editingApp.enabled}
+            onsave={handleSaveLimits}
+            onclose={() => { showLimitEditor = false; editingApp = null; }}
+        />
+    {/if}
 </main>
