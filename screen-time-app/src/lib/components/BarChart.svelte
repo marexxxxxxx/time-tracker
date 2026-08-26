@@ -11,16 +11,26 @@
     } = $props();
 
     let canvas: HTMLCanvasElement;
+    let chart: Chart;
 
-    onMount(() => {
-        const chart = new Chart(canvas, {
+    function getChartColor(varName: string): string {
+        return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    }
+
+    function buildChart() {
+        if (chart) chart.destroy();
+        const primary = getChartColor('--chart-primary');
+        const neutral = getChartColor('--chart-neutral');
+        const text = getChartColor('--chart-text');
+
+        chart = new Chart(canvas, {
             type: 'bar',
             data: {
                 labels,
                 datasets: [{
                     data,
-                    backgroundColor: 'rgba(0, 88, 188, 0.6)',
-                    borderColor: 'rgba(0, 88, 188, 1)',
+                    backgroundColor: primary + '99',
+                    borderColor: primary,
                     borderWidth: 1,
                     borderRadius: 8,
                 }]
@@ -39,18 +49,23 @@
                 scales: {
                     y: {
                         beginAtZero: true,
-                        grid: { color: 'rgba(0,0,0,0.05)' },
-                        ticks: { font: { family: 'Inter', size: 11 } }
+                        grid: { color: neutral + '40' },
+                        ticks: { color: text, font: { family: 'Inter', size: 11 } }
                     },
                     x: {
                         grid: { display: false },
-                        ticks: { font: { family: 'Inter', size: 11 } }
+                        ticks: { color: text, font: { family: 'Inter', size: 11 } }
                     }
                 }
             }
         });
+    }
 
-        return () => chart.destroy();
+    onMount(() => {
+        buildChart();
+        const observer = new MutationObserver(() => buildChart());
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        return () => { chart.destroy(); observer.disconnect(); };
     });
 </script>
 

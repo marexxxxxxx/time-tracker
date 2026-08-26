@@ -11,15 +11,26 @@
     } = $props();
 
     let canvas: HTMLCanvasElement;
+    let chart: Chart;
 
-    onMount(() => {
-        const chart = new Chart(canvas, {
+    function resolveColor(color: string): string {
+        if (color.startsWith('--')) {
+            return getComputedStyle(document.documentElement).getPropertyValue(color).trim();
+        }
+        return color;
+    }
+
+    function buildChart() {
+        if (chart) chart.destroy();
+        const resolvedColors = colors.map(resolveColor);
+
+        chart = new Chart(canvas, {
             type: 'doughnut',
             data: {
                 labels,
                 datasets: [{
                     data,
-                    backgroundColor: colors,
+                    backgroundColor: resolvedColors,
                     borderWidth: 0,
                 }]
             },
@@ -32,8 +43,13 @@
                 }
             }
         });
+    }
 
-        return () => chart.destroy();
+    onMount(() => {
+        buildChart();
+        const observer = new MutationObserver(() => buildChart());
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        return () => { chart.destroy(); observer.disconnect(); };
     });
 </script>
 
