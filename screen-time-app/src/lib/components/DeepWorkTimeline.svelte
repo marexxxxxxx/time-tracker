@@ -14,7 +14,7 @@
 <h3 class="font-headline-md text-headline-md text-on-surface font-semibold mb-lg">Recent Deep Work</h3>
 <div class="space-y-sm">
     {#each sessions as session}
-        <div class="flex items-center justify-between p-sm hover:bg-surface-container-low dark:hover:bg-surface-container-highest/20 rounded-lg transition-colors border border-transparent hover:border-outline-variant/30 dark:hover:border-outline/20">
+        <div class="flex items-center justify-between p-sm hover:bg-surface-container-low rounded-lg transition-colors border border-transparent hover:border-outline-variant/30">
             <div class="flex items-center gap-md">
                 <div class="w-2 h-10 rounded-full" style="background-color: {session.color}"></div>
                 <div>
@@ -27,7 +27,7 @@
             </div>
             <div class="text-right">
                 <p class="font-headline-md text-body-md font-semibold" style="color: {session.color}">{session.duration}</p>
-                <span class="inline-block px-2 py-0.5 rounded-md bg-surface-variant dark:bg-surface-container-highest text-on-surface-variant font-label-sm text-[10px] uppercase">{session.category}</span>
+                <span class="inline-block px-2 py-0.5 rounded-md bg-surface-variant text-on-surface-variant font-label-sm text-[10px] uppercase">{session.category}</span>
             </div>
         </div>
     {/each}

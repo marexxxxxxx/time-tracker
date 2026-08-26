@@ -2,18 +2,130 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  :root {
+:root {
+    /* M3 Light Theme */
     --color-primary: #0058bc;
     --color-on-primary: #ffffff;
-  }
+    --color-primary-container: #0070eb;
+    --color-on-primary-container: #fefcff;
+    --color-secondary: #006e28;
+    --color-on-secondary: #ffffff;
+    --color-secondary-container: #6ffb85;
+    --color-on-secondary-container: #00732a;
+    --color-tertiary: #4c4aca;
+    --color-on-tertiary: #ffffff;
+    --color-tertiary-container: #6664e4;
+    --color-on-tertiary-container: #fffbff;
+    --color-error: #ba1a1a;
+    --color-on-error: #ffffff;
+    --color-error-container: #ffdad6;
+    --color-on-error-container: #93000a;
+    --color-surface: #faf9fe;
+    --color-surface-dim: #dad9df;
+    --color-surface-bright: #faf9fe;
+    --color-surface-container-lowest: #ffffff;
+    --color-surface-container-low: #f4f3f8;
+    --color-surface-container: #eeedf3;
+    --color-surface-container-high: #e9e7ed;
+    --color-surface-container-highest: #e3e2e7;
+    --color-on-surface: #1a1b1f;
+    --color-on-surface-variant: #414755;
+    --color-surface-variant: #e3e2e7;
+    --color-surface-tint: #005bc1;
+    --color-inverse-surface: #2f3034;
+    --color-inverse-on-surface: #f1f0f5;
+    --color-inverse-primary: #adc6ff;
+    --color-outline: #717786;
+    --color-outline-variant: #c1c6d7;
+    --color-background: #faf9fe;
+    --color-on-background: #1a1b1f;
+    --color-primary-fixed: #d8e2ff;
+    --color-primary-fixed-dim: #adc6ff;
+    --color-on-primary-fixed: #001a41;
+    --color-on-primary-fixed-variant: #004493;
+    --color-secondary-fixed: #72fe88;
+    --color-secondary-fixed-dim: #53e16f;
+    --color-on-secondary-fixed: #002107;
+    --color-on-secondary-fixed-variant: #00531c;
+    --color-tertiary-fixed: #e2dfff;
+    --color-tertiary-fixed-dim: #c2c1ff;
+    --color-on-tertiary-fixed: #0c006a;
+    --color-on-tertiary-fixed-variant: #3631b4;
+
+    /* Chart colors (light) */
+    --chart-primary: #0058bc;
+    --chart-secondary: #006e28;
+    --chart-tertiary: #4c4aca;
+    --chart-error: #E50914;
+    --chart-neutral: #e3e2e7;
+    --chart-grid: #c1c6d7;
+    --chart-text: #1a1b1f;
+}
+
+.dark {
+    /* M3 Dark Theme */
+    --color-primary: #adc6ff;
+    --color-on-primary: #002f65;
+    --color-primary-container: #00459a;
+    --color-on-primary-container: #d8e2ff;
+    --color-secondary: #88d86a;
+    --color-on-secondary: #003910;
+    --color-secondary-container: #00531c;
+    --color-on-secondary-container: #72fe88;
+    --color-tertiary: #c2c1ff;
+    --color-on-tertiary: #1c0090;
+    --color-tertiary-container: #3631b4;
+    --color-on-tertiary-container: #e2dfff;
+    --color-error: #ffb4ab;
+    --color-on-error: #690005;
+    --color-error-container: #93000a;
+    --color-on-error-container: #ffdad6;
+    --color-surface: #1a1b1f;
+    --color-surface-dim: #131316;
+    --color-surface-bright: #3a3a3d;
+    --color-surface-container-lowest: #0f0f12;
+    --color-surface-container-low: #1a1b1f;
+    --color-surface-container: #202124;
+    --color-surface-container-high: #2b2c2f;
+    --color-surface-container-highest: #363739;
+    --color-on-surface: #e3e2e7;
+    --color-on-surface-variant: #c4c6d0;
+    --color-surface-variant: #44474f;
+    --color-surface-tint: #adc6ff;
+    --color-inverse-surface: #e3e2e7;
+    --color-inverse-on-surface: #1a1b1f;
+    --color-inverse-primary: #0058bc;
+    --color-outline: #8e9099;
+    --color-outline-variant: #44474f;
+    --color-background: #1a1b1f;
+    --color-on-background: #e3e2e7;
+    --color-primary-fixed: #d8e2ff;
+    --color-primary-fixed-dim: #adc6ff;
+    --color-on-primary-fixed: #001a41;
+    --color-on-primary-fixed-variant: #004493;
+    --color-secondary-fixed: #72fe88;
+    --color-secondary-fixed-dim: #53e16f;
+    --color-on-secondary-fixed: #002107;
+    --color-on-secondary-fixed-variant: #00531c;
+    --color-tertiary-fixed: #e2dfff;
+    --color-tertiary-fixed-dim: #c2c1ff;
+    --color-on-tertiary-fixed: #0c006a;
+    --color-on-tertiary-fixed-variant: #3631b4;
+
+    /* Chart colors (dark) */
+    --chart-primary: #adc6ff;
+    --chart-secondary: #88d86a;
+    --chart-tertiary: #c2c1ff;
+    --chart-error: #ffb4ab;
+    --chart-neutral: #363739;
+    --chart-grid: #44474f;
+    --chart-text: #e3e2e7;
 }
 
 @layer base {
-  body {
-    @apply bg-background text-on-surface antialiased min-h-screen selection:bg-primary selection:text-on-primary font-body-md;
-    font-family: 'Inter', sans-serif;
-  }
+    body {
+        @apply bg-background text-on-surface antialiased min-h-screen;
+    }
 }
 
 .material-symbols-outlined {

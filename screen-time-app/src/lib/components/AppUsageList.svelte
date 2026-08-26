@@ -25,7 +25,7 @@
                 </div>
                 <span class="font-label-md text-label-md text-on-surface-variant">{formatDuration(item.duration)}</span>
             </div>
-            <div class="h-2 w-full bg-surface-container-high dark:bg-surface-container-highest rounded-full overflow-hidden">
+            <div class="h-2 w-full bg-surface-container-high rounded-full overflow-hidden">
                 <div class="h-full rounded-full" style="width: {pct(item.duration)}%; background-color: {item.color}"></div>
             </div>
         </div>

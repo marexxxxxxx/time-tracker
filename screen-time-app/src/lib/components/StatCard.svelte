@@ -16,7 +16,7 @@
     } = $props();
 </script>
 
-<div class="bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-lg shadow-[0_4px_20px_rgba(0,0,0,0.04)] dark:bg-surface-container dark:border-outline/20 flex flex-col justify-between">
+<div class="bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-lg shadow-[0_4px_20px_rgba(0,0,0,0.04)] flex flex-col justify-between">
     <div>
         <div class="flex items-center gap-sm mb-sm">
             <span class="material-symbols-outlined text-primary">{icon}</span>

@@ -38,7 +38,7 @@
     });
 </script>
 
-<div class="flex items-center justify-between p-lg hover:bg-surface-container-lowest dark:hover:bg-surface-container transition-colors {isBlocked ? 'opacity-60' : ''}">
+<div class="flex items-center justify-between p-lg hover:bg-surface-container-lowest transition-colors {isBlocked ? 'opacity-60' : ''}">
     <div class="flex items-center gap-md">
         <div class="w-10 h-10 rounded-lg flex items-center justify-center" style="background-color: {iconBg}">
             <span class="material-symbols-outlined">{icon}</span>
@@ -50,7 +50,7 @@
     </div>
     <div class="flex items-center gap-md">
         {#if usagePct >= 0}
-            <div class="bg-surface-variant dark:bg-surface-container-highest h-1.5 rounded-full w-24 overflow-hidden mr-4">
+            <div class="bg-surface-variant h-1.5 rounded-full w-24 overflow-hidden mr-4">
                 <div class="h-1.5 rounded-full" style="width: {usagePct}%; background-color: {iconBg}"></div>
             </div>
             <p class="font-label-sm text-label-sm text-on-surface-variant w-12 text-right mr-4">{usage}</p>
@@ -69,7 +69,7 @@
         {/if}
         {#if onEditLimits}
             <button
-                class="p-xs rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low dark:hover:bg-surface-container transition-colors"
+                class="p-xs rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors"
                 onclick={() => { alert('TUNE CLICKED: ' + appName); onEditLimits?.(); }}
                 aria-label="Edit limits for {appName}"
             >
@@ -90,7 +90,7 @@
             onclick={onToggle}
             aria-label="Toggle {appName}"
         >
-            <div class="block overflow-hidden h-6 rounded-full transition-colors duration-200 ease-in-out {isBlocked ? 'bg-primary' : 'bg-surface-variant dark:bg-surface-container-highest'}">
+            <div class="block overflow-hidden h-6 rounded-full transition-colors duration-200 ease-in-out {isBlocked ? 'bg-primary' : 'bg-surface-variant'}">
                 <div class="absolute top-[2px] left-[2px] w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 ease-in-out {isBlocked ? 'translate-x-[24px]' : 'translate-x-0'}"></div>
             </div>
         </button>
