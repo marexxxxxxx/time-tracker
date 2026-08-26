@@ -576,6 +576,101 @@ fn migrate_browser_app_names(conn: &Connection) -> Result<(), Box<dyn std::error
     Ok(())
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SettingsResponse {
+    pub settings: std::collections::HashMap<String, String>,
+}
+
+#[tauri::command]
+fn get_settings(state: State<'_, AppState>) -> Result<SettingsResponse, String> {
+    let conn_guard = state.conn.lock().unwrap();
+    if let Some(conn) = conn_guard.as_ref() {
+        let mut stmt = conn.prepare("SELECT key, value FROM settings")
+            .map_err(|e| e.to_string())?;
+        let mut settings = std::collections::HashMap::new();
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        }).map_err(|e| e.to_string())?;
+        for row in rows.flatten() {
+            settings.insert(row.0, row.1);
+        }
+        Ok(SettingsResponse { settings })
+    } else {
+        Err("Database not initialized".to_string())
+    }
+}
+
+#[tauri::command]
+fn update_setting(state: State<'_, AppState>, key: String, value: String) -> Result<(), String> {
+    let conn_guard = state.conn.lock().unwrap();
+    if let Some(conn) = conn_guard.as_ref() {
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+            params![key, value],
+        ).map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err("Database not initialized".to_string())
+    }
+}
+
+#[tauri::command]
+fn export_activities_csv(state: State<'_, AppState>) -> Result<String, String> {
+    let conn_guard = state.conn.lock().unwrap();
+    if let Some(conn) = conn_guard.as_ref() {
+        let mut stmt = conn.prepare("SELECT app_name, title, start_time, end_time, duration, category, productivity_score FROM activities")
+            .map_err(|e| e.to_string())?;
+        let mut csv = String::from("app_name,title,start_time,end_time,duration,category,productivity_score\n");
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, i64>(6)?,
+            ))
+        }).map_err(|e| e.to_string())?;
+        for row in rows.flatten() {
+            csv.push_str(&format!("{},{},{},{},{},{},{}\n", row.0, row.1, row.2, row.3, row.4, row.5, row.6));
+        }
+        Ok(csv)
+    } else {
+        Err("Database not initialized".to_string())
+    }
+}
+
+#[tauri::command]
+fn export_activities_json(state: State<'_, AppState>) -> Result<String, String> {
+    let activities = get_activities(state)?;
+    serde_json::to_string_pretty(&activities).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn clear_all_data(state: State<'_, AppState>) -> Result<(), String> {
+    let conn_guard = state.conn.lock().unwrap();
+    if let Some(conn) = conn_guard.as_ref() {
+        conn.execute("DELETE FROM activities", []).map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM blocked_apps", []).map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err("Database not initialized".to_string())
+    }
+}
+
+#[tauri::command]
+fn reset_demo_data(state: State<'_, AppState>) -> Result<(), String> {
+    let conn_guard = state.conn.lock().unwrap();
+    if let Some(conn) = conn_guard.as_ref() {
+        conn.execute("DELETE FROM activities", []).map_err(|e| e.to_string())?;
+        seed_database(conn).map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err("Database not initialized".to_string())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -632,6 +727,12 @@ pub fn run() {
             update_app_limits,
             get_app_daily_usage,
             get_app_weekly_usage,
+            get_settings,
+            update_setting,
+            export_activities_csv,
+            export_activities_json,
+            clear_all_data,
+            reset_demo_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
