@@ -51,7 +51,7 @@
                         onclick={() => enabled = !enabled}
                         aria-label="Toggle limits"
                     >
-                        <div class="block overflow-hidden h-6 rounded-full transition-colors duration-200 ease-in-out {enabled ? 'bg-primary' : 'bg-surface-variant dark:bg-surface-container-highest'}">
+                        <div class="block overflow-hidden h-6 rounded-full transition-colors duration-200 ease-in-out {enabled ? 'bg-primary' : 'bg-surface-variant'}">
                             <div class="absolute top-[2px] left-[2px] w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 ease-in-out {enabled ? 'translate-x-[24px]' : 'translate-x-0'}"></div>
                         </div>
                     </button>
@@ -67,7 +67,7 @@
                                 min="0"
                                 step="5"
                                 bind:value={daily}
-                                class="w-full bg-surface-container-high dark:bg-surface-container-highest text-on-surface px-md py-sm rounded-lg border border-outline-variant/40 focus:border-primary focus:outline-none font-body-md"
+                                class="w-full bg-surface-container-high text-on-surface px-md py-sm rounded-lg border border-outline-variant/40 focus:border-primary focus:outline-none font-body-md"
                                 placeholder="0 = no limit"
                             />
                         </div>
@@ -79,7 +79,7 @@
                                 min="0"
                                 step="5"
                                 bind:value={weekly}
-                                class="w-full bg-surface-container-high dark:bg-surface-container-highest text-on-surface px-md py-sm rounded-lg border border-outline-variant/40 focus:border-primary focus:outline-none font-body-md"
+                                class="w-full bg-surface-container-high text-on-surface px-md py-sm rounded-lg border border-outline-variant/40 focus:border-primary focus:outline-none font-body-md"
                                 placeholder="0 = no limit"
                             />
                         </div>

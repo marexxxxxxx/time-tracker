@@ -35,7 +35,7 @@
             />
         </div>
 
-        <div class="col-span-12 md:col-span-8 bg-surface-container-lowest border border-outline-variant rounded-xl p-lg shadow-[0_4px_20px_rgba(0,0,0,0.04)] dark:bg-surface-container dark:border-outline/20">
+        <div class="col-span-12 md:col-span-8 bg-surface-container-lowest border border-outline-variant rounded-xl p-lg shadow-[0_4px_20px_rgba(0,0,0,0.04)]">
             {#if weekData.length > 0}
                 <ProductivityChart data={weekData} />
             {:else}
@@ -43,7 +43,7 @@
             {/if}
         </div>
 
-        <div class="col-span-12 md:col-span-7 bg-surface-container-lowest border border-outline-variant rounded-xl p-lg shadow-[0_4px_20px_rgba(0,0,0,0.04)] dark:bg-surface-container dark:border-outline/20">
+        <div class="col-span-12 md:col-span-7 bg-surface-container-lowest border border-outline-variant rounded-xl p-lg shadow-[0_4px_20px_rgba(0,0,0,0.04)]">
             {#if sessions.length > 0}
                 <DeepWorkTimeline sessions={sessions} />
             {:else}
