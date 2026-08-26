@@ -264,6 +264,11 @@ fn extract_browser_site(app_name: &str, title: &str) -> Option<String> {
         let site = cleaned[pos + " - ".len()..].trim().to_string();
         if !site.is_empty() { return Some(site); }
     }
+    // Fallback: " | " separator — site name is before the pipe
+    if let Some(pos) = cleaned.find(" | ") {
+        let site = cleaned[..pos].trim().to_string();
+        if !site.is_empty() { return Some(site); }
+    }
     Some(cleaned)
 }
 

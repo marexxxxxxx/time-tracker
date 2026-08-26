@@ -540,11 +540,13 @@ fn migrate_browser_app_names(conn: &Connection) -> Result<(), Box<dyn std::error
         let cleaned = cleaned.trim().to_string();
         if cleaned.is_empty() { continue; }
 
-        // Get the site name (last segment after " — " or " - ")
+        // Get the site name (last segment after " — " or " - ", fallback " | ")
         let site = if let Some(pos) = cleaned.rfind(" — ") {
             cleaned[pos + " — ".len()..].trim().to_string()
         } else if let Some(pos) = cleaned.rfind(" - ") {
             cleaned[pos + " - ".len()..].trim().to_string()
+        } else if let Some(pos) = cleaned.find(" | ") {
+            cleaned[..pos].trim().to_string()
         } else {
             cleaned.clone()
         };
