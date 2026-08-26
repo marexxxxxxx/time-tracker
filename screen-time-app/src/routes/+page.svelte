@@ -5,7 +5,7 @@
     import AppUsageList from '$lib/components/AppUsageList.svelte';
     import CategoryDonut from '$lib/components/CategoryDonut.svelte';
     import TimeRangeSelector from '$lib/components/TimeRangeSelector.svelte';
-    import { dailySummary, totalDuration, productivityScore, formatDuration } from '$lib/stores/activities';
+    import { dailySummary, formatDuration } from '$lib/stores/activities';
     import { selectedRange } from '$lib/stores/timeRange';
 
     let summary = $derived($dailySummary);
@@ -27,8 +27,8 @@
             <StatCard
                 icon="schedule"
                 label="Total Screen Time"
-                value={formatDuration($totalDuration)}
-                progress={$productivityScore}
+                value={formatDuration(summary?.total_duration ?? 0)}
+                progress={summary?.productivity_score ?? 0}
             />
         </div>
 
