@@ -257,11 +257,11 @@ fn extract_browser_site(app_name: &str, title: &str) -> Option<String> {
     if cleaned.is_empty() { return None; }
     // Extract just the site name: last segment after " — " or " - "
     if let Some(pos) = cleaned.rfind(" — ") {
-        let site = cleaned[pos + 3..].trim().to_string();
+        let site = cleaned[pos + " — ".len()..].trim().to_string();
         if !site.is_empty() { return Some(site); }
     }
     if let Some(pos) = cleaned.rfind(" - ") {
-        let site = cleaned[pos + 3..].trim().to_string();
+        let site = cleaned[pos + " - ".len()..].trim().to_string();
         if !site.is_empty() { return Some(site); }
     }
     Some(cleaned)
