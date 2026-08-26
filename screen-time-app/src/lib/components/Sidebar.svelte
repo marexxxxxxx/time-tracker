@@ -32,8 +32,8 @@
 
     <!-- Footer Tabs -->
     <div class="flex flex-col gap-sm mt-auto pt-md border-t border-outline-variant/20">
-        <a class="text-on-surface-variant hover:bg-surface-container-low rounded-lg px-md py-sm flex items-center gap-sm transition-colors duration-200" href="#">
-            <span class="material-symbols-outlined">settings</span>
+        <a class="{$page.url.pathname.includes('/settings') ? 'bg-primary/10 text-primary font-bold' : 'text-on-surface-variant hover:bg-surface-container-low'} rounded-lg px-md py-sm flex items-center gap-sm transition-colors duration-200" href="/settings">
+            <span class="material-symbols-outlined" style={$page.url.pathname.includes('/settings') ? "font-variation-settings: 'FILL' 1;" : ""}>settings</span>
             <span class="font-label-md text-label-md">Settings</span>
         </a>
         <a class="text-on-surface-variant hover:bg-surface-container-low rounded-lg px-md py-sm flex items-center gap-sm transition-colors duration-200" href="#">
