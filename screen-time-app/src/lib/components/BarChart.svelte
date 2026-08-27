@@ -42,7 +42,10 @@
                     legend: { display: false },
                     tooltip: {
                         callbacks: {
-                            label: (ctx) => `${(ctx.parsed.y ?? 0).toFixed(1)} ${unit}`
+                            label: (ctx) => {
+                                const v = ctx.parsed.y ?? 0;
+                                return v >= 60 ? `${(v / 60).toFixed(1)} h` : `${Math.round(v)} min`;
+                            }
                         }
                     }
                 },
@@ -50,7 +53,14 @@
                     y: {
                         beginAtZero: true,
                         grid: { color: neutral + '40' },
-                        ticks: { color: text, font: { family: 'Inter', size: 11 } }
+                        ticks: {
+                            color: text,
+                            font: { family: 'Inter', size: 11 },
+                            callback: (v) => {
+                                const n = typeof v === 'number' ? v : parseFloat(String(v));
+                                return n >= 60 ? `${(n / 60).toFixed(0)}h` : `${n}m`;
+                            }
+                        }
                     },
                     x: {
                         grid: { display: false },

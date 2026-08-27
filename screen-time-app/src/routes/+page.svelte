@@ -41,8 +41,8 @@
                 {#if summary && summary.app_usage.length > 0}
                     <BarChart
                         labels={summary.app_usage.slice(0, 6).map(a => a.app_name)}
-                        data={summary.app_usage.slice(0, 6).map(a => a.duration / 3600)}
-                        unit="hours"
+                        data={summary.app_usage.slice(0, 6).map(a => a.duration / 60)}
+                        unit="min"
                     />
                 {:else}
                     <div class="flex items-center justify-center h-full text-on-surface-variant font-body-md">No data yet today</div>
