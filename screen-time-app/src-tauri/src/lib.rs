@@ -514,6 +514,9 @@ fn init_db(db_path: &std::path::Path) -> Result<Connection, Box<dyn std::error::
     // One-time migration: clean up browser app names that still contain full titles
     migrate_browser_app_names(&conn)?;
 
+    // One-time migration: normalize terminal-prompt app names
+    migrate_terminal_app_names(&conn)?;
+
     // Migration: add limit columns to blocked_apps if missing
     let _ = conn.execute("ALTER TABLE blocked_apps ADD COLUMN daily_limit_minutes INTEGER NOT NULL DEFAULT 0", []);
     let _ = conn.execute("ALTER TABLE blocked_apps ADD COLUMN weekly_limit_minutes INTEGER NOT NULL DEFAULT 0", []);
@@ -572,6 +575,18 @@ fn migrate_browser_app_names(conn: &Connection) -> Result<(), Box<dyn std::error
     }
     if updated > 0 {
         println!("Migrated {} browser app names to site names.", updated);
+    }
+    Ok(())
+}
+
+fn migrate_terminal_app_names(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
+    // Normalize terminal prompt patterns: "user@host: ~/dir" → "Terminal"
+    let changed = conn.execute(
+        "UPDATE activities SET app_name = 'Terminal' WHERE app_name LIKE '%@%:%' AND (app_name LIKE '%~%' OR app_name LIKE '%/%')",
+        [],
+    )?;
+    if changed > 0 {
+        println!("Migrated {} terminal-prompt app names to 'Terminal'.", changed);
     }
     Ok(())
 }

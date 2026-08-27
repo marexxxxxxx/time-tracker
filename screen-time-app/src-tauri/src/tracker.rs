@@ -286,6 +286,33 @@ fn extract_browser_site(app_name: &str, title: &str) -> Option<String> {
     Some(cleaned)
 }
 
+const KNOWN_APP_CLASSES: &[(&str, &str)] = &[
+    ("Alacritty", "Alacritty"),
+    ("kitty", "Kitty"),
+    ("org.gnome.Terminal", "Terminal"),
+    ("org.gnome.Console", "Console"),
+    ("foot", "Foot"),
+    ("wezterm", "WezTerm"),
+];
+
+fn normalize_app_name(app_name: &str, title: &str) -> String {
+    // Check known window classes first
+    for (class, clean_name) in KNOWN_APP_CLASSES {
+        if app_name.eq_ignore_ascii_case(class) {
+            return clean_name.to_string();
+        }
+    }
+
+    // Fix terminal prompt patterns: "user@host: ~/dir" → "Terminal"
+    if app_name.contains('@') && app_name.contains(':') && (app_name.contains('~') || app_name.contains('/')) {
+        return "Terminal".to_string();
+    }
+
+    // Browser suffix stripping is already handled by extract_browser_site
+
+    app_name.to_string()
+}
+
 fn categorize_app(app_name: &str, title: &str) -> String {
     let app_lower = app_name.to_lowercase();
     let title_lower = title.to_lowercase();
@@ -323,6 +350,9 @@ fn get_active_window() -> Option<WindowInfo> {
     if let Some(site) = extract_browser_site(&info.app_name, &info.title) {
         info.app_name = site;
     }
+
+    // Normalize app name (fix terminal prompts, map known classes)
+    info.app_name = normalize_app_name(&info.app_name, &info.title);
 
     Some(info)
 }
@@ -556,5 +586,27 @@ mod tests {
             ]
         });
         assert!(find_focused_node(&tree).is_none());
+    }
+
+    #[test]
+    fn test_normalize_known_app_classes() {
+        assert_eq!(normalize_app_name("Alacritty", "user@host: ~/dir"), "Alacritty");
+        assert_eq!(normalize_app_name("kitty", "nvim file.txt"), "Kitty");
+        assert_eq!(normalize_app_name("foot", "bash"), "Foot");
+        assert_eq!(normalize_app_name("wezterm", "top"), "WezTerm");
+    }
+
+    #[test]
+    fn test_normalize_terminal_prompt() {
+        assert_eq!(normalize_app_name("user@kiserver: ~/max", "bash"), "Terminal");
+        assert_eq!(normalize_app_name("user@marexlaptop:~", "zsh"), "Terminal");
+        assert_eq!(normalize_app_name("user@server: /home/user/project", "fish"), "Terminal");
+    }
+
+    #[test]
+    fn test_normalize_passthrough() {
+        assert_eq!(normalize_app_name("Visual Studio Code", "main.rs"), "Visual Studio Code");
+        assert_eq!(normalize_app_name("YouTube", "Cat Video"), "YouTube");
+        assert_eq!(normalize_app_name("Nautilus", "Home"), "Nautilus");
     }
 }
