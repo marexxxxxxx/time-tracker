@@ -131,3 +131,44 @@ fn remove_x11_rule(app_name: &str) {
     // X11 has no persistent blocking rules; close matching windows
     add_x11_rule(app_name);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_browser_chromium() {
+        assert!(is_browser("chromium"));
+        assert!(is_browser("Chromium"));
+    }
+
+    #[test]
+    fn test_is_browser_firefox() {
+        assert!(is_browser("firefox"));
+        assert!(is_browser("Firefox"));
+    }
+
+    #[test]
+    fn test_is_browser_chrome() {
+        assert!(is_browser("google-chrome"));
+    }
+
+    #[test]
+    fn test_is_browser_edge() {
+        assert!(is_browser("microsoft-edge"));
+    }
+
+    #[test]
+    fn test_is_browser_brave() {
+        assert!(is_browser("brave-browser"));
+    }
+
+    #[test]
+    fn test_is_not_browser() {
+        assert!(!is_browser("Alacritty"));
+        assert!(!is_browser("VS Code"));
+        assert!(!is_browser("Slack"));
+        assert!(!is_browser("Nautilus"));
+        assert!(!is_browser("Unknown"));
+    }
+}

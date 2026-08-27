@@ -737,3 +737,337 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn setup_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "journal_mode", "WAL").unwrap();
+
+        conn.execute("CREATE TABLE IF NOT EXISTS activities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            app_name TEXT, title TEXT, start_time DATETIME,
+            end_time DATETIME, duration INTEGER, category TEXT,
+            productivity_score INTEGER
+        )", []).unwrap();
+
+        conn.execute("CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY, value TEXT
+        )", []).unwrap();
+
+        conn.execute("CREATE TABLE IF NOT EXISTS blocked_apps (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            app_name TEXT NOT NULL UNIQUE,
+            is_blocked INTEGER NOT NULL DEFAULT 1,
+            daily_limit_minutes INTEGER NOT NULL DEFAULT 0,
+            weekly_limit_minutes INTEGER NOT NULL DEFAULT 0,
+            limit_enabled INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )", []).unwrap();
+
+        conn
+    }
+
+    fn insert_activity(conn: &Connection, app: &str, title: &str, duration: i64, category: &str, score: i64) {
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO activities (app_name, title, start_time, end_time, duration, category, productivity_score) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![app, title, &now, &now, duration, category, score],
+        ).unwrap();
+    }
+
+    fn insert_activity_at(conn: &Connection, app: &str, title: &str, start: &str, end: &str, duration: i64, category: &str, score: i64) {
+        conn.execute(
+            "INSERT INTO activities (app_name, title, start_time, end_time, duration, category, productivity_score) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![app, title, start, end, duration, category, score],
+        ).unwrap();
+    }
+
+    // --- is_app_blocked tests ---
+
+    #[test]
+    fn test_is_app_blocked_exact_match() {
+        let conn = setup_db();
+        conn.execute("INSERT INTO blocked_apps (app_name, is_blocked) VALUES ('YouTube', 1)", []).unwrap();
+        assert!(is_app_blocked(&conn, "YouTube"));
+    }
+
+    #[test]
+    fn test_is_app_blocked_case_insensitive() {
+        let conn = setup_db();
+        conn.execute("INSERT INTO blocked_apps (app_name, is_blocked) VALUES ('youtube', 1)", []).unwrap();
+        assert!(is_app_blocked(&conn, "YouTube"));
+        assert!(is_app_blocked(&conn, "YOUTUBE"));
+    }
+
+    #[test]
+    fn test_is_app_blocked_substring_match() {
+        let conn = setup_db();
+        conn.execute("INSERT INTO blocked_apps (app_name, is_blocked) VALUES ('YouTube', 1)", []).unwrap();
+        assert!(is_app_blocked(&conn, "YouTube - Video Title - Mozilla Firefox"));
+    }
+
+    #[test]
+    fn test_is_app_blocked_not_blocked() {
+        let conn = setup_db();
+        conn.execute("INSERT INTO blocked_apps (app_name, is_blocked) VALUES ('YouTube', 1)", []).unwrap();
+        assert!(!is_app_blocked(&conn, "GitHub"));
+        assert!(!is_app_blocked(&conn, "VS Code"));
+    }
+
+    #[test]
+    fn test_is_app_blocked_disabled() {
+        let conn = setup_db();
+        conn.execute("INSERT INTO blocked_apps (app_name, is_blocked) VALUES ('YouTube', 0)", []).unwrap();
+        assert!(!is_app_blocked(&conn, "YouTube"));
+    }
+
+    #[test]
+    fn test_is_app_blocked_empty_db() {
+        let conn = setup_db();
+        assert!(!is_app_blocked(&conn, "Anything"));
+    }
+
+    // --- Blocked apps CRUD ---
+
+    #[test]
+    fn test_add_blocked_app() {
+        let conn = setup_db();
+        let changed = conn.execute("INSERT OR IGNORE INTO blocked_apps (app_name, is_blocked) VALUES ('YouTube', 1)", []).unwrap();
+        assert_eq!(changed, 1);
+        assert!(is_app_blocked(&conn, "YouTube"));
+    }
+
+    #[test]
+    fn test_add_blocked_app_duplicate() {
+        let conn = setup_db();
+        conn.execute("INSERT OR IGNORE INTO blocked_apps (app_name, is_blocked) VALUES ('YouTube', 1)", []).unwrap();
+        let changed = conn.execute("INSERT OR IGNORE INTO blocked_apps (app_name, is_blocked) VALUES ('YouTube', 1)", []).unwrap();
+        assert_eq!(changed, 0);
+    }
+
+    #[test]
+    fn test_remove_blocked_app() {
+        let conn = setup_db();
+        conn.execute("INSERT INTO blocked_apps (app_name, is_blocked) VALUES ('YouTube', 1)", []).unwrap();
+        conn.execute("DELETE FROM blocked_apps WHERE app_name = 'YouTube'", []).unwrap();
+        assert!(!is_app_blocked(&conn, "YouTube"));
+    }
+
+    #[test]
+    fn test_toggle_blocked_app() {
+        let conn = setup_db();
+        conn.execute("INSERT INTO blocked_apps (app_name, is_blocked) VALUES ('YouTube', 1)", []).unwrap();
+        conn.execute("UPDATE blocked_apps SET is_blocked = NOT is_blocked WHERE app_name = 'YouTube'", []).unwrap();
+        assert!(!is_app_blocked(&conn, "YouTube"));
+        conn.execute("UPDATE blocked_apps SET is_blocked = NOT is_blocked WHERE app_name = 'YouTube'", []).unwrap();
+        assert!(is_app_blocked(&conn, "YouTube"));
+    }
+
+    // --- App limit config ---
+
+    #[test]
+    fn test_get_app_limit_config_exists() {
+        let conn = setup_db();
+        conn.execute("INSERT INTO blocked_apps (app_name, is_blocked, daily_limit_minutes, weekly_limit_minutes, limit_enabled) VALUES ('YouTube', 1, 60, 300, 1)", []).unwrap();
+        let config = get_app_limit_config(&conn, "YouTube").unwrap();
+        assert!(config.limit_enabled);
+        assert_eq!(config.daily_limit_minutes, 60);
+        assert_eq!(config.weekly_limit_minutes, 300);
+    }
+
+    #[test]
+    fn test_get_app_limit_config_not_found() {
+        let conn = setup_db();
+        assert!(get_app_limit_config(&conn, "YouTube").is_none());
+    }
+
+    #[test]
+    fn test_get_app_limit_config_disabled() {
+        let conn = setup_db();
+        conn.execute("INSERT INTO blocked_apps (app_name, is_blocked, daily_limit_minutes, weekly_limit_minutes, limit_enabled) VALUES ('YouTube', 1, 60, 300, 0)", []).unwrap();
+        let config = get_app_limit_config(&conn, "YouTube").unwrap();
+        assert!(!config.limit_enabled);
+    }
+
+    // --- Daily/weekly usage ---
+
+    #[test]
+    fn test_get_app_usage_today() {
+        let conn = setup_db();
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        let start = format!("{}T12:00:00", today);
+        let end = format!("{}T12:00:30", today);
+        insert_activity_at(&conn, "VS Code", "main.rs", &start, &end, 30, "Coding", 1);
+        insert_activity_at(&conn, "VS Code", "lib.rs", &start, &end, 120, "Coding", 1);
+
+        let total = get_app_usage_today(&conn, "VS Code");
+        assert_eq!(total, 150);
+    }
+
+    #[test]
+    fn test_get_app_usage_today_different_app() {
+        let conn = setup_db();
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        let start = format!("{}T12:00:00", today);
+        let end = format!("{}T12:00:30", today);
+        insert_activity_at(&conn, "VS Code", "main.rs", &start, &end, 300, "Coding", 1);
+
+        let total = get_app_usage_today(&conn, "Spotify");
+        assert_eq!(total, 0);
+    }
+
+    #[test]
+    fn test_get_app_usage_this_week() {
+        let conn = setup_db();
+        let now = Utc::now();
+        let start = now.to_rfc3339();
+        conn.execute(
+            "INSERT INTO activities (app_name, title, start_time, end_time, duration, category, productivity_score) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params!["VS Code", "main.rs", &start, &start, 600, "Coding", 1],
+        ).unwrap();
+
+        let total = get_app_usage_this_week(&conn, "VS Code");
+        assert_eq!(total, 600);
+    }
+
+    // --- Settings ---
+
+    #[test]
+    fn test_settings_crud() {
+        let conn = setup_db();
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('idle_timeout', '5')", []).unwrap();
+        let val: String = conn.query_row("SELECT value FROM settings WHERE key = 'idle_timeout'", [], |row| row.get(0)).unwrap();
+        assert_eq!(val, "5");
+
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('idle_timeout', '10')", []).unwrap();
+        let val: String = conn.query_row("SELECT value FROM settings WHERE key = 'idle_timeout'", [], |row| row.get(0)).unwrap();
+        assert_eq!(val, "10");
+    }
+
+    #[test]
+    fn test_settings_multiple() {
+        let conn = setup_db();
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('key1', 'val1')", []).unwrap();
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('key2', 'val2')", []).unwrap();
+
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM settings", [], |row| row.get(0)).unwrap();
+        assert_eq!(count, 2);
+    }
+
+    // --- Activity queries ---
+
+    #[test]
+    fn test_get_daily_summary_empty() {
+        let conn = setup_db();
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        let start = format!("{}T00:00:00", today);
+        let end = format!("{}T23:59:59", today);
+
+        let mut stmt = conn.prepare("SELECT app_name, duration, category, productivity_score FROM activities WHERE start_time >= ?1 AND start_time <= ?2").unwrap();
+        let rows: Vec<(String, i64, String, i64)> = stmt.query_map(params![start, end], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        }).unwrap().filter_map(|r| r.ok()).collect();
+
+        assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn test_get_daily_summary_with_data() {
+        let conn = setup_db();
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        let start = format!("{}T12:00:00", today);
+        let end = format!("{}T12:00:30", today);
+
+        insert_activity_at(&conn, "VS Code", "main.rs", &start, &end, 300, "Coding", 1);
+        insert_activity_at(&conn, "YouTube", "Cat Video", &start, &end, 120, "Entertainment", -1);
+
+        let mut stmt = conn.prepare("SELECT app_name, duration, category, productivity_score FROM activities WHERE start_time >= ?1 AND start_time <= ?2").unwrap();
+        let rows: Vec<(String, i64, String, i64)> = stmt.query_map(params![start, end], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        }).unwrap().filter_map(|r| r.ok()).collect();
+
+        let total: i64 = rows.iter().map(|r| r.1).sum();
+        assert_eq!(total, 420);
+        assert_eq!(rows.len(), 2);
+    }
+
+    #[test]
+    fn test_productivity_score_calculation() {
+        let conn = setup_db();
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        let start = format!("{}T12:00:00", today);
+        let end = format!("{}T12:00:30", today);
+
+        insert_activity_at(&conn, "VS Code", "main.rs", &start, &end, 300, "Coding", 1);
+        insert_activity_at(&conn, "YouTube", "Cat Video", &start, &end, 100, "Entertainment", -1);
+
+        let total_duration: i64 = 400;
+        let productive_duration: i64 = 300;
+        let score = productive_duration * 100 / total_duration;
+        assert_eq!(score, 75);
+    }
+
+    // --- Clear data ---
+
+    #[test]
+    fn test_clear_all_data() {
+        let conn = setup_db();
+        insert_activity(&conn, "VS Code", "main.rs", 300, "Coding", 1);
+        conn.execute("INSERT INTO blocked_apps (app_name, is_blocked) VALUES ('YouTube', 1)", []).unwrap();
+
+        conn.execute("DELETE FROM activities", []).unwrap();
+        conn.execute("DELETE FROM blocked_apps", []).unwrap();
+
+        let act_count: i64 = conn.query_row("SELECT COUNT(*) FROM activities", [], |row| row.get(0)).unwrap();
+        let blocked_count: i64 = conn.query_row("SELECT COUNT(*) FROM blocked_apps", [], |row| row.get(0)).unwrap();
+        assert_eq!(act_count, 0);
+        assert_eq!(blocked_count, 0);
+    }
+
+    // --- Export ---
+
+    #[test]
+    fn test_csv_export() {
+        let conn = setup_db();
+        insert_activity(&conn, "VS Code", "main.rs", 300, "Coding", 1);
+
+        let mut stmt = conn.prepare("SELECT app_name, title, start_time, end_time, duration, category, productivity_score FROM activities").unwrap();
+        let mut csv = String::from("app_name,title,start_time,end_time,duration,category,productivity_score\n");
+        let rows: Vec<(String, String, String, String, i64, String, i64)> = stmt.query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?))
+        }).unwrap().filter_map(|r| r.ok()).collect();
+        for row in &rows {
+            csv.push_str(&format!("{},{},{},{},{},{},{}\n", row.0, row.1, row.2, row.3, row.4, row.5, row.6));
+        }
+
+        assert!(csv.contains("app_name,title"));
+        assert!(csv.contains("VS Code"));
+    }
+
+    #[test]
+    fn test_json_export() {
+        let conn = setup_db();
+        insert_activity(&conn, "VS Code", "main.rs", 300, "Coding", 1);
+
+        let mut stmt = conn.prepare("SELECT id, app_name, title, start_time, end_time, duration, category, productivity_score FROM activities").unwrap();
+        let activities: Vec<Activity> = stmt.query_map([], |row| {
+            Ok(Activity {
+                id: row.get(0)?,
+                app_name: row.get(1)?,
+                title: row.get(2)?,
+                start_time: row.get(3)?,
+                end_time: row.get(4)?,
+                duration: row.get(5)?,
+                category: row.get(6)?,
+                productivity_score: row.get(7)?,
+            })
+        }).unwrap().filter_map(|r| r.ok()).collect();
+
+        let json = serde_json::to_string_pretty(&activities).unwrap();
+        assert!(json.contains("VS Code"));
+        assert!(json.contains("main.rs"));
+    }
+}

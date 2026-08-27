@@ -402,3 +402,159 @@ fn get_x11_active_window() -> Option<WindowInfo> {
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_categorize_app_coding() {
+        assert_eq!(categorize_app("Visual Studio Code", "main.rs"), "Coding");
+        assert_eq!(categorize_app("Alacritty", "user@host: ~/project"), "Coding");
+        assert_eq!(categorize_app("IntelliJ IDEA", "App.kt"), "Coding");
+        assert_eq!(categorize_app("kitty", "nvim file.txt"), "Coding");
+        assert_eq!(categorize_app("Terminal", "bash"), "Coding");
+    }
+
+    #[test]
+    fn test_categorize_app_design() {
+        assert_eq!(categorize_app("Figma", "My Design File"), "Design");
+        assert_eq!(categorize_app("GIMP", "photo.xcf"), "Design");
+        assert_eq!(categorize_app("Inkscape", "logo.svg"), "Design");
+    }
+
+    #[test]
+    fn test_categorize_app_entertainment() {
+        assert_eq!(categorize_app("YouTube", "Cat Videos"), "Entertainment");
+        assert_eq!(categorize_app("Spotify", "Focus Playlist"), "Entertainment");
+        assert_eq!(categorize_app("Netflix", "The Office"), "Entertainment");
+        assert_eq!(categorize_app("VLC", "movie.mkv"), "Entertainment");
+        assert_eq!(categorize_app("Steam", "Half-Life 3"), "Entertainment");
+        assert_eq!(categorize_app("firefox", "Twitch - Mozilla Firefox"), "Entertainment");
+        assert_eq!(categorize_app("chromium", "YouTube - Chromium"), "Entertainment");
+    }
+
+    #[test]
+    fn test_categorize_app_communication() {
+        assert_eq!(categorize_app("Slack", "team-channel"), "Communication");
+        assert_eq!(categorize_app("Discord", "voice-chat"), "Communication");
+        assert_eq!(categorize_app("Microsoft Teams", "Meeting"), "Communication");
+    }
+
+    #[test]
+    fn test_categorize_app_neutral() {
+        assert_eq!(categorize_app("chromium", "GitHub"), "Neutral");
+        assert_eq!(categorize_app("firefox", "Stack Overflow"), "Neutral");
+        assert_eq!(categorize_app("Nautilus", "Home"), "Neutral");
+        assert_eq!(categorize_app("Unknown App", "Some Title"), "Neutral");
+    }
+
+    #[test]
+    fn test_extract_browser_site_chromium() {
+        let result = extract_browser_site("chromium", "GitHub - Chromium");
+        assert_eq!(result, Some("GitHub".to_string()));
+    }
+
+    #[test]
+    fn test_extract_browser_site_firefox_with_em_dash() {
+        let result = extract_browser_site("firefox", "Stack Overflow — Mozilla Firefox");
+        assert_eq!(result, Some("Stack Overflow".to_string()));
+    }
+
+    #[test]
+    fn test_extract_browser_site_with_pipe() {
+        let result = extract_browser_site("google-chrome", "My Page | Google Docs — Google Chrome");
+        assert_eq!(result, Some("My Page".to_string()));
+    }
+
+    #[test]
+    fn test_extract_browser_site_not_browser() {
+        let result = extract_browser_site("Alacritty", "user@host: ~/dir");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_extract_browser_site_empty_after_strip() {
+        let result = extract_browser_site("chromium", " — Chromium");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_extract_browser_site_fallback_cleaned() {
+        let result = extract_browser_site("chromium", "Some Title Here");
+        assert_eq!(result, Some("Some Title Here".to_string()));
+    }
+
+    #[test]
+    fn test_url_encode_simple() {
+        assert_eq!(url_encode("hello"), "hello");
+        assert_eq!(url_encode("hello world"), "hello%20world");
+    }
+
+    #[test]
+    fn test_url_encode_special_chars() {
+        assert_eq!(url_encode("a&b=c"), "a%26b%3Dc");
+        assert_eq!(url_encode("100%"), "100%25");
+        assert_eq!(url_encode("path/to/file"), "path%2Fto%2Ffile");
+    }
+
+    #[test]
+    fn test_url_encode_empty() {
+        assert_eq!(url_encode(""), "");
+    }
+
+    #[test]
+    fn test_url_encode_safe_chars() {
+        assert_eq!(url_encode("ABCxyz012-_.~"), "ABCxyz012-_.~");
+    }
+
+    #[test]
+    fn test_find_focused_node_found() {
+        let tree = serde_json::json!({
+            "nodes": [
+                { "focused": false, "name": "Window 1" },
+                { "focused": true, "name": "Focused Window", "app_id": "firefox" }
+            ]
+        });
+        let result = find_focused_node(&tree);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap()["name"].as_str().unwrap(), "Focused Window");
+    }
+
+    #[test]
+    fn test_find_focused_node_nested() {
+        let tree = serde_json::json!({
+            "nodes": [
+                { "focused": false, "nodes": [
+                    { "focused": true, "name": "Deep Window" }
+                ]}
+            ]
+        });
+        let result = find_focused_node(&tree);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap()["name"].as_str().unwrap(), "Deep Window");
+    }
+
+    #[test]
+    fn test_find_focused_node_floating() {
+        let tree = serde_json::json!({
+            "nodes": [],
+            "floating_nodes": [
+                { "focused": true, "name": "Floating Window" }
+            ]
+        });
+        let result = find_focused_node(&tree);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap()["name"].as_str().unwrap(), "Floating Window");
+    }
+
+    #[test]
+    fn test_find_focused_node_none_focused() {
+        let tree = serde_json::json!({
+            "nodes": [
+                { "focused": false, "name": "Window 1" }
+            ]
+        });
+        assert!(find_focused_node(&tree).is_none());
+    }
+}
