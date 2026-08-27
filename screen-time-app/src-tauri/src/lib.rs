@@ -115,6 +115,7 @@ fn normalize_display_name(app_name: &str) -> String {
     }
     match app_name {
         "Alacritty" | "kitty" | "foot" | "wezterm" | "org.gnome.Terminal" | "org.gnome.Console" => "Terminal".to_string(),
+        "OC" => "OpenCode".to_string(),
         other => other.to_string(),
     }
 }

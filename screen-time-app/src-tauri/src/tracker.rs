@@ -293,6 +293,7 @@ const KNOWN_APP_CLASSES: &[(&str, &str)] = &[
     ("org.gnome.Console", "Console"),
     ("foot", "Foot"),
     ("wezterm", "WezTerm"),
+    ("OC", "OpenCode"),
 ];
 
 fn normalize_app_name(app_name: &str, title: &str) -> String {
