@@ -160,3 +160,9 @@
     border-radius: 50%;
     transition: transform 0.2s ease-in-out;
 }
+
+select,
+select option {
+    color: var(--color-on-surface) !important;
+    background-color: var(--color-surface-container-low) !important;
+}

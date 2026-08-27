@@ -85,7 +85,7 @@
                         <AppBlockCard
                             appName={app.app_name}
                             icon="smart_display"
-                            iconBg="rgba(0,0,0,0.05)"
+                            iconBg="var(--color-primary-container)"
                             limit={app.is_blocked ? "Blocked" : "Allowed"}
                             isBlocked={app.is_blocked}
                             dailyLimit={app.daily_limit_minutes}
@@ -111,7 +111,7 @@
                         <AppBlockCard
                             appName={app.app_name}
                             icon="play_arrow"
-                            iconBg="rgba(255,0,0,0.1)"
+                            iconBg="var(--color-error-container)"
                             limit={app.is_blocked ? "Blocked" : "Allowed"}
                             isBlocked={app.is_blocked}
                             dailyLimit={app.daily_limit_minutes}
@@ -137,7 +137,7 @@
                         <AppBlockCard
                             appName={app.app_name}
                             icon="apps"
-                            iconBg="rgba(0,0,0,0.05)"
+                            iconBg="var(--color-surface-variant)"
                             limit={app.is_blocked ? "Blocked" : "Allowed"}
                             isBlocked={app.is_blocked}
                             dailyLimit={app.daily_limit_minutes}

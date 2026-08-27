@@ -7,7 +7,7 @@
         theme.toggle();
     }
 
-    let icon = $derived(currentTheme === 'system' ? 'system_stats' : currentTheme === 'light' ? 'light_mode' : 'dark_mode');
+    let icon = $derived(currentTheme === 'system' ? 'brightness_auto' : currentTheme === 'light' ? 'light_mode' : 'dark_mode');
     let label = $derived(currentTheme === 'system' ? 'System' : currentTheme === 'light' ? 'Light' : 'Dark');
 </script>
 

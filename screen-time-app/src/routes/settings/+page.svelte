@@ -74,7 +74,8 @@
                 <select
                     value={$settings.idle_timeout}
                     onchange={(e) => settings.update('idle_timeout', (e.target as HTMLSelectElement).value)}
-                    class="bg-surface-container-low border border-outline-variant/30 rounded-lg px-md py-sm font-body-md text-on-surface"
+                    class="bg-surface-container-low border border-outline-variant/30 rounded-lg px-md py-sm font-body-md"
+                    style="color: var(--color-on-surface);"
                 >
                     <option value="5">5 minutes</option>
                     <option value="10">10 minutes</option>
