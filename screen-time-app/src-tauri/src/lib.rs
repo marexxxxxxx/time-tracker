@@ -85,7 +85,7 @@ fn get_activities(state: State<'_, AppState>) -> Result<Vec<Activity>, String> {
         let activity_iter = stmt.query_map([], |row| {
             Ok(Activity {
                 id: row.get(0)?,
-                app_name: row.get(1)?,
+                app_name: normalize_display_name(&row.get::<_, String>(1)?),
                 title: row.get(2)?,
                 start_time: row.get(3)?,
                 end_time: row.get(4)?,
@@ -104,6 +104,18 @@ fn get_activities(state: State<'_, AppState>) -> Result<Vec<Activity>, String> {
         Ok(activities)
     } else {
         Err("Database connection not initialized yet".to_string())
+    }
+}
+
+#[tauri::command]
+/// Normalize stored app names for display grouping (terminals → "Terminal")
+fn normalize_display_name(app_name: &str) -> String {
+    if app_name.contains('@') && app_name.contains(':') && (app_name.contains('~') || app_name.contains('/')) {
+        return "Terminal".to_string();
+    }
+    match app_name {
+        "Alacritty" | "kitty" | "foot" | "wezterm" | "org.gnome.Terminal" | "org.gnome.Console" => "Terminal".to_string(),
+        other => other.to_string(),
     }
 }
 
@@ -132,7 +144,8 @@ fn get_daily_summary(state: State<'_, AppState>) -> Result<DailySummary, String>
 
         let mut app_map: std::collections::HashMap<String, (i64, String)> = std::collections::HashMap::new();
         for (app, dur, cat, _) in &rows {
-            let entry = app_map.entry(app.clone()).or_insert((0, cat.clone()));
+            let normalized = normalize_display_name(app);
+            let entry = app_map.entry(normalized).or_insert((0, cat.clone()));
             entry.0 += dur;
         }
         let mut app_usage: Vec<AppUsage> = app_map.iter()
