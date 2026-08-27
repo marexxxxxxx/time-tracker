@@ -126,6 +126,20 @@ pub fn start_window_tracking(conn: Arc<Mutex<Option<Connection>>>, app_handle: A
                     }
                     _ => {
                         let now = Utc::now();
+
+                        // Finalize the old activity's duration before switching
+                        if let Some(id) = current_id {
+                            let duration = (now - current_start).num_seconds();
+                            if let Ok(mut db_guard) = conn.lock() {
+                                if let Some(db) = db_guard.as_mut() {
+                                    let _ = db.execute(
+                                        "UPDATE activities SET end_time = ?1, duration = ?2 WHERE id = ?3",
+                                        params![now.to_rfc3339(), duration, id]
+                                    );
+                                }
+                            }
+                        }
+
                         current_start = now;
                         current_window = Some(active.clone());
 
