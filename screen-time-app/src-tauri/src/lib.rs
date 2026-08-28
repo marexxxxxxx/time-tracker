@@ -405,6 +405,38 @@ fn get_app_weekly_usage(state: State<'_, AppState>, app_name: String) -> Result<
     }
 }
 
+#[derive(Debug, Serialize)]
+pub struct TrackedEvent {
+    pub id: i64,
+    pub event_type: String,
+    pub payload: String,
+}
+
+#[tauri::command]
+fn poll_events(state: State<'_, AppState>, after_id: i64) -> Result<Vec<TrackedEvent>, String> {
+    let conn_guard = state.conn.lock().unwrap();
+    let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
+    let mut stmt = conn
+        .prepare("SELECT id, type, payload FROM events WHERE id > ?1 ORDER BY id ASC")
+        .map_err(|e| e.to_string())?;
+    let events: Vec<TrackedEvent> = stmt
+        .query_map(params![after_id], |row| {
+            Ok(TrackedEvent {
+                id: row.get(0)?,
+                event_type: row.get(1)?,
+                payload: row.get(2)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .flatten()
+        .collect();
+    if let Some(max_id) = events.last().map(|e| e.id) {
+        conn.execute("DELETE FROM events WHERE id <= ?1", params![max_id])
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(events)
+}
+
 pub fn is_app_blocked(conn: &Connection, app_name: &str) -> bool {
     // Check exact match first
     let exact = conn.query_row(
@@ -477,6 +509,66 @@ pub fn write_event(conn: &Connection, event_type: &str, payload: &str) -> rusqli
         "INSERT INTO events (type, payload) VALUES (?1, ?2)",
         params![event_type, payload],
     )
+}
+
+#[tauri::command]
+fn set_autostart(enabled: bool) -> Result<(), String> {
+    let config_home = std::env::var("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::var("HOME")
+                .map(|h| std::path::PathBuf::from(h).join(".config"))
+                .unwrap_or_default()
+        });
+    let autostart_dir = config_home.join("autostart");
+    let entry = autostart_dir.join("screen-time-daemon.desktop");
+
+    if enabled {
+        std::fs::create_dir_all(&autostart_dir).map_err(|e| e.to_string())?;
+        let home = std::env::var("HOME").unwrap_or_default();
+        let exec = format!("{}/.local/bin/screen-time-daemon", home);
+        let content = format!(
+            "[Desktop Entry]\nType=Application\nName=Screen Time Daemon\nExec={}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n",
+            exec
+        );
+        std::fs::write(&entry, content).map_err(|e| e.to_string())?;
+    } else {
+        let _ = std::fs::remove_file(&entry);
+    }
+    Ok(())
+}
+
+fn daemon_running() -> bool {
+    let pid_file = app_data_dir().join("daemon.pid");
+    if let Ok(content) = std::fs::read_to_string(&pid_file) {
+        if let Ok(pid) = content.trim().parse::<i32>() {
+            return std::path::Path::new(&format!("/proc/{}", pid)).exists();
+        }
+    }
+    false
+}
+
+fn ensure_daemon_running() {
+    if daemon_running() {
+        return;
+    }
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("screen-time-daemon"));
+        }
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        candidates.push(std::path::PathBuf::from(home)
+            .join(".local/bin/screen-time-daemon"));
+    }
+    for cand in candidates {
+        if cand.exists() {
+            let _ = std::process::Command::new(&cand).spawn();
+            return;
+        }
+    }
+    eprintln!("screen-time-daemon binary not found; tracking is not running.");
 }
 
 fn seed_database(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
@@ -769,6 +861,9 @@ pub fn run() {
                     // Save conn to state first
                     let state: State<AppState> = app_handle.state();
                     *state.conn.lock().unwrap() = shared_conn.lock().unwrap().take();
+
+                    // Ensure the background daemon is running (do not kill on exit).
+                    ensure_daemon_running();
                 }
                 Err(e) => {
                     eprintln!("Failed to initialize database: {}", e);
@@ -795,6 +890,8 @@ pub fn run() {
             export_activities_json,
             clear_all_data,
             reset_demo_data,
+            poll_events,
+            set_autostart,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
