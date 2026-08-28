@@ -4,9 +4,28 @@ use rusqlite::{Connection, params};
 use std::sync::{Arc, Mutex};
 use tauri::{Manager, State};
 
-mod blocker;
-mod idle;
-mod tracker;
+pub mod blocker;
+pub mod idle;
+pub mod tracker;
+
+// Shared data-directory resolution (mirrors Tauri app_data_dir on Linux).
+pub fn app_data_dir() -> std::path::PathBuf {
+    let identifier = "marexxxxxxx.screen-time-app";
+    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+        std::path::PathBuf::from(xdg).join(identifier)
+    } else if let Ok(home) = std::env::var("HOME") {
+        std::path::PathBuf::from(home)
+            .join(".local")
+            .join("share")
+            .join(identifier)
+    } else {
+        std::path::PathBuf::from(identifier)
+    }
+}
+
+pub fn db_path() -> std::path::PathBuf {
+    app_data_dir().join("screentime.db")
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Activity {
@@ -85,7 +104,7 @@ fn get_activities(state: State<'_, AppState>) -> Result<Vec<Activity>, String> {
         let activity_iter = stmt.query_map([], |row| {
             Ok(Activity {
                 id: row.get(0)?,
-                app_name: row.get(1)?,
+                app_name: normalize_display_name(&row.get::<_, String>(1)?),
                 title: row.get(2)?,
                 start_time: row.get(3)?,
                 end_time: row.get(4)?,
@@ -104,6 +123,19 @@ fn get_activities(state: State<'_, AppState>) -> Result<Vec<Activity>, String> {
         Ok(activities)
     } else {
         Err("Database connection not initialized yet".to_string())
+    }
+}
+
+#[tauri::command]
+/// Normalize stored app names for display grouping (terminals → "Terminal")
+fn normalize_display_name(app_name: &str) -> String {
+    if app_name.contains('@') && app_name.contains(':') && (app_name.contains('~') || app_name.contains('/')) {
+        return "Terminal".to_string();
+    }
+    match app_name {
+        "Alacritty" | "kitty" | "foot" | "wezterm" | "org.gnome.Terminal" | "org.gnome.Console" => "Terminal".to_string(),
+        "OC" => "OpenCode".to_string(),
+        other => other.to_string(),
     }
 }
 
@@ -132,7 +164,8 @@ fn get_daily_summary(state: State<'_, AppState>) -> Result<DailySummary, String>
 
         let mut app_map: std::collections::HashMap<String, (i64, String)> = std::collections::HashMap::new();
         for (app, dur, cat, _) in &rows {
-            let entry = app_map.entry(app.clone()).or_insert((0, cat.clone()));
+            let normalized = normalize_display_name(app);
+            let entry = app_map.entry(normalized).or_insert((0, cat.clone()));
             entry.0 += dur;
         }
         let mut app_usage: Vec<AppUsage> = app_map.iter()
@@ -372,6 +405,38 @@ fn get_app_weekly_usage(state: State<'_, AppState>, app_name: String) -> Result<
     }
 }
 
+#[derive(Debug, Serialize)]
+pub struct TrackedEvent {
+    pub id: i64,
+    pub event_type: String,
+    pub payload: String,
+}
+
+#[tauri::command]
+fn poll_events(state: State<'_, AppState>, after_id: i64) -> Result<Vec<TrackedEvent>, String> {
+    let conn_guard = state.conn.lock().unwrap();
+    let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
+    let mut stmt = conn
+        .prepare("SELECT id, type, payload FROM events WHERE id > ?1 ORDER BY id ASC")
+        .map_err(|e| e.to_string())?;
+    let events: Vec<TrackedEvent> = stmt
+        .query_map(params![after_id], |row| {
+            Ok(TrackedEvent {
+                id: row.get(0)?,
+                event_type: row.get(1)?,
+                payload: row.get(2)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    if let Some(max_id) = events.last().map(|e| e.id) {
+        conn.execute("DELETE FROM events WHERE id <= ?1", params![max_id])
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(events)
+}
+
 pub fn is_app_blocked(conn: &Connection, app_name: &str) -> bool {
     // Check exact match first
     let exact = conn.query_row(
@@ -439,6 +504,73 @@ pub fn get_app_usage_this_week(conn: &Connection, app_name: &str) -> i64 {
     ).unwrap_or(0)
 }
 
+pub fn write_event(conn: &Connection, event_type: &str, payload: &str) -> rusqlite::Result<usize> {
+    conn.execute(
+        "INSERT INTO events (type, payload) VALUES (?1, ?2)",
+        params![event_type, payload],
+    )
+}
+
+#[tauri::command]
+fn set_autostart(enabled: bool) -> Result<(), String> {
+    let config_home = std::env::var("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::var("HOME")
+                .map(|h| std::path::PathBuf::from(h).join(".config"))
+                .unwrap_or_default()
+        });
+    let autostart_dir = config_home.join("autostart");
+    let entry = autostart_dir.join("screen-time-daemon.desktop");
+
+    if enabled {
+        std::fs::create_dir_all(&autostart_dir).map_err(|e| e.to_string())?;
+        let home = std::env::var("HOME").unwrap_or_default();
+        let exec = format!("{}/.local/bin/screen-time-daemon", home);
+        let content = format!(
+            "[Desktop Entry]\nType=Application\nName=Screen Time Daemon\nExec={}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n",
+            exec
+        );
+        std::fs::write(&entry, content).map_err(|e| e.to_string())?;
+    } else {
+        let _ = std::fs::remove_file(&entry);
+    }
+    Ok(())
+}
+
+fn daemon_running() -> bool {
+    let pid_file = app_data_dir().join("daemon.pid");
+    if let Ok(content) = std::fs::read_to_string(&pid_file) {
+        if let Ok(pid) = content.trim().parse::<i32>() {
+            return std::path::Path::new(&format!("/proc/{}", pid)).exists();
+        }
+    }
+    false
+}
+
+fn ensure_daemon_running() {
+    if daemon_running() {
+        return;
+    }
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("screen-time-daemon"));
+        }
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        candidates.push(std::path::PathBuf::from(home)
+            .join(".local/bin/screen-time-daemon"));
+    }
+    for cand in candidates {
+        if cand.exists() {
+            let _ = std::process::Command::new(&cand).spawn();
+            return;
+        }
+    }
+    eprintln!("screen-time-daemon binary not found; tracking is not running.");
+}
+
 fn seed_database(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
     let count: i64 = conn.query_row("SELECT COUNT(*) FROM activities", [], |row| row.get(0))?;
 
@@ -473,11 +605,15 @@ fn seed_database(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn init_db(db_path: &std::path::Path) -> Result<Connection, Box<dyn std::error::Error>> {
+pub fn init_db(db_path: &std::path::Path) -> Result<Connection, Box<dyn std::error::Error>> {
     let conn = Connection::open(db_path)?;
 
     // Enable WAL mode for better concurrency
     conn.pragma_update(None, "journal_mode", "WAL")?;
+
+    // Wait up to 5s instead of failing with "database is locked" when the GUI
+    // and daemon access the DB concurrently.
+    conn.busy_timeout(std::time::Duration::from_secs(5))?;
 
     conn.execute("
         CREATE TABLE IF NOT EXISTS activities (
@@ -514,10 +650,23 @@ fn init_db(db_path: &std::path::Path) -> Result<Connection, Box<dyn std::error::
     // One-time migration: clean up browser app names that still contain full titles
     migrate_browser_app_names(&conn)?;
 
+    // One-time migration: normalize terminal-prompt app names
+    migrate_terminal_app_names(&conn)?;
+
     // Migration: add limit columns to blocked_apps if missing
     let _ = conn.execute("ALTER TABLE blocked_apps ADD COLUMN daily_limit_minutes INTEGER NOT NULL DEFAULT 0", []);
     let _ = conn.execute("ALTER TABLE blocked_apps ADD COLUMN weekly_limit_minutes INTEGER NOT NULL DEFAULT 0", []);
     let _ = conn.execute("ALTER TABLE blocked_apps ADD COLUMN limit_enabled INTEGER NOT NULL DEFAULT 0", []);
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            type TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );",
+        [],
+    )?;
 
     Ok(conn)
 }
@@ -572,6 +721,18 @@ fn migrate_browser_app_names(conn: &Connection) -> Result<(), Box<dyn std::error
     }
     if updated > 0 {
         println!("Migrated {} browser app names to site names.", updated);
+    }
+    Ok(())
+}
+
+fn migrate_terminal_app_names(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
+    // Normalize terminal prompt patterns: "user@host: ~/dir" → "Terminal"
+    let changed = conn.execute(
+        "UPDATE activities SET app_name = 'Terminal' WHERE app_name LIKE '%@%:%' AND (app_name LIKE '%~%' OR app_name LIKE '%/%')",
+        [],
+    )?;
+    if changed > 0 {
+        println!("Migrated {} terminal-prompt app names to 'Terminal'.", changed);
     }
     Ok(())
 }
@@ -681,37 +842,33 @@ pub fn run() {
         .setup(|app| {
             let app_handle = app.handle().clone();
 
-            // Initialize db connection
-            if let Ok(app_dir) = app_handle.path().app_data_dir() {
-                if !app_dir.exists() {
-                    let _ = std::fs::create_dir_all(&app_dir);
+            // Initialize db connection using the same path the daemon uses
+            let app_dir = crate::app_data_dir();
+            if !app_dir.exists() {
+                let _ = std::fs::create_dir_all(&app_dir);
+            }
+            let db_path = crate::db_path();
+
+            match init_db(&db_path) {
+                Ok(conn) => {
+                    // Seed
+                    if let Err(e) = seed_database(&conn) {
+                        eprintln!("Failed to seed database: {}", e);
+                    }
+
+                    let shared_conn = Arc::new(Mutex::new(Some(conn)));
+
+                    // Save conn to state first
+                    let state: State<AppState> = app_handle.state();
+                    *state.conn.lock().unwrap() = shared_conn.lock().unwrap().take();
+
+                    // Ensure the background daemon is running (do not kill on exit).
+                    ensure_daemon_running();
                 }
-                let db_path = app_dir.join("screentime.db");
-
-                match init_db(&db_path) {
-                    Ok(conn) => {
-                        // Seed
-                        if let Err(e) = seed_database(&conn) {
-                            eprintln!("Failed to seed database: {}", e);
-                        }
-
-                        let shared_conn = Arc::new(Mutex::new(Some(conn)));
-
-                        // Save conn to state first
-                        let state: State<AppState> = app_handle.state();
-                        *state.conn.lock().unwrap() = shared_conn.lock().unwrap().take();
-
-                        // Start Window Tracking by cloning the state's Arc
-                        tracker::start_window_tracking(Arc::clone(&state.conn), app_handle.clone());
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to initialize database: {}", e);
-                    }
+                Err(e) => {
+                    eprintln!("Failed to initialize database: {}", e);
                 }
             }
-
-            // Start idle detection
-            idle::start_idle_detection(app.handle().clone());
 
             Ok(())
         })
@@ -733,7 +890,370 @@ pub fn run() {
             export_activities_json,
             clear_all_data,
             reset_demo_data,
+            poll_events,
+            set_autostart,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn setup_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "journal_mode", "WAL").unwrap();
+
+        conn.execute("CREATE TABLE IF NOT EXISTS activities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            app_name TEXT, title TEXT, start_time DATETIME,
+            end_time DATETIME, duration INTEGER, category TEXT,
+            productivity_score INTEGER
+        )", []).unwrap();
+
+        conn.execute("CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY, value TEXT
+        )", []).unwrap();
+
+        conn.execute("CREATE TABLE IF NOT EXISTS blocked_apps (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            app_name TEXT NOT NULL UNIQUE,
+            is_blocked INTEGER NOT NULL DEFAULT 1,
+            daily_limit_minutes INTEGER NOT NULL DEFAULT 0,
+            weekly_limit_minutes INTEGER NOT NULL DEFAULT 0,
+            limit_enabled INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )", []).unwrap();
+
+        conn
+    }
+
+    fn insert_activity(conn: &Connection, app: &str, title: &str, duration: i64, category: &str, score: i64) {
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO activities (app_name, title, start_time, end_time, duration, category, productivity_score) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![app, title, &now, &now, duration, category, score],
+        ).unwrap();
+    }
+
+    fn insert_activity_at(conn: &Connection, app: &str, title: &str, start: &str, end: &str, duration: i64, category: &str, score: i64) {
+        conn.execute(
+            "INSERT INTO activities (app_name, title, start_time, end_time, duration, category, productivity_score) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![app, title, start, end, duration, category, score],
+        ).unwrap();
+    }
+
+    // --- is_app_blocked tests ---
+
+    #[test]
+    fn test_is_app_blocked_exact_match() {
+        let conn = setup_db();
+        conn.execute("INSERT INTO blocked_apps (app_name, is_blocked) VALUES ('YouTube', 1)", []).unwrap();
+        assert!(is_app_blocked(&conn, "YouTube"));
+    }
+
+    #[test]
+    fn test_is_app_blocked_case_insensitive() {
+        let conn = setup_db();
+        conn.execute("INSERT INTO blocked_apps (app_name, is_blocked) VALUES ('youtube', 1)", []).unwrap();
+        assert!(is_app_blocked(&conn, "YouTube"));
+        assert!(is_app_blocked(&conn, "YOUTUBE"));
+    }
+
+    #[test]
+    fn test_is_app_blocked_substring_match() {
+        let conn = setup_db();
+        conn.execute("INSERT INTO blocked_apps (app_name, is_blocked) VALUES ('YouTube', 1)", []).unwrap();
+        assert!(is_app_blocked(&conn, "YouTube - Video Title - Mozilla Firefox"));
+    }
+
+    #[test]
+    fn test_is_app_blocked_not_blocked() {
+        let conn = setup_db();
+        conn.execute("INSERT INTO blocked_apps (app_name, is_blocked) VALUES ('YouTube', 1)", []).unwrap();
+        assert!(!is_app_blocked(&conn, "GitHub"));
+        assert!(!is_app_blocked(&conn, "VS Code"));
+    }
+
+    #[test]
+    fn test_is_app_blocked_disabled() {
+        let conn = setup_db();
+        conn.execute("INSERT INTO blocked_apps (app_name, is_blocked) VALUES ('YouTube', 0)", []).unwrap();
+        assert!(!is_app_blocked(&conn, "YouTube"));
+    }
+
+    #[test]
+    fn test_is_app_blocked_empty_db() {
+        let conn = setup_db();
+        assert!(!is_app_blocked(&conn, "Anything"));
+    }
+
+    // --- Blocked apps CRUD ---
+
+    #[test]
+    fn test_add_blocked_app() {
+        let conn = setup_db();
+        let changed = conn.execute("INSERT OR IGNORE INTO blocked_apps (app_name, is_blocked) VALUES ('YouTube', 1)", []).unwrap();
+        assert_eq!(changed, 1);
+        assert!(is_app_blocked(&conn, "YouTube"));
+    }
+
+    #[test]
+    fn test_add_blocked_app_duplicate() {
+        let conn = setup_db();
+        conn.execute("INSERT OR IGNORE INTO blocked_apps (app_name, is_blocked) VALUES ('YouTube', 1)", []).unwrap();
+        let changed = conn.execute("INSERT OR IGNORE INTO blocked_apps (app_name, is_blocked) VALUES ('YouTube', 1)", []).unwrap();
+        assert_eq!(changed, 0);
+    }
+
+    #[test]
+    fn test_remove_blocked_app() {
+        let conn = setup_db();
+        conn.execute("INSERT INTO blocked_apps (app_name, is_blocked) VALUES ('YouTube', 1)", []).unwrap();
+        conn.execute("DELETE FROM blocked_apps WHERE app_name = 'YouTube'", []).unwrap();
+        assert!(!is_app_blocked(&conn, "YouTube"));
+    }
+
+    #[test]
+    fn test_toggle_blocked_app() {
+        let conn = setup_db();
+        conn.execute("INSERT INTO blocked_apps (app_name, is_blocked) VALUES ('YouTube', 1)", []).unwrap();
+        conn.execute("UPDATE blocked_apps SET is_blocked = NOT is_blocked WHERE app_name = 'YouTube'", []).unwrap();
+        assert!(!is_app_blocked(&conn, "YouTube"));
+        conn.execute("UPDATE blocked_apps SET is_blocked = NOT is_blocked WHERE app_name = 'YouTube'", []).unwrap();
+        assert!(is_app_blocked(&conn, "YouTube"));
+    }
+
+    // --- App limit config ---
+
+    #[test]
+    fn test_get_app_limit_config_exists() {
+        let conn = setup_db();
+        conn.execute("INSERT INTO blocked_apps (app_name, is_blocked, daily_limit_minutes, weekly_limit_minutes, limit_enabled) VALUES ('YouTube', 1, 60, 300, 1)", []).unwrap();
+        let config = get_app_limit_config(&conn, "YouTube").unwrap();
+        assert!(config.limit_enabled);
+        assert_eq!(config.daily_limit_minutes, 60);
+        assert_eq!(config.weekly_limit_minutes, 300);
+    }
+
+    #[test]
+    fn test_get_app_limit_config_not_found() {
+        let conn = setup_db();
+        assert!(get_app_limit_config(&conn, "YouTube").is_none());
+    }
+
+    #[test]
+    fn test_get_app_limit_config_disabled() {
+        let conn = setup_db();
+        conn.execute("INSERT INTO blocked_apps (app_name, is_blocked, daily_limit_minutes, weekly_limit_minutes, limit_enabled) VALUES ('YouTube', 1, 60, 300, 0)", []).unwrap();
+        let config = get_app_limit_config(&conn, "YouTube").unwrap();
+        assert!(!config.limit_enabled);
+    }
+
+    // --- Daily/weekly usage ---
+
+    #[test]
+    fn test_get_app_usage_today() {
+        let conn = setup_db();
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        let start = format!("{}T12:00:00", today);
+        let end = format!("{}T12:00:30", today);
+        insert_activity_at(&conn, "VS Code", "main.rs", &start, &end, 30, "Coding", 1);
+        insert_activity_at(&conn, "VS Code", "lib.rs", &start, &end, 120, "Coding", 1);
+
+        let total = get_app_usage_today(&conn, "VS Code");
+        assert_eq!(total, 150);
+    }
+
+    #[test]
+    fn test_get_app_usage_today_different_app() {
+        let conn = setup_db();
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        let start = format!("{}T12:00:00", today);
+        let end = format!("{}T12:00:30", today);
+        insert_activity_at(&conn, "VS Code", "main.rs", &start, &end, 300, "Coding", 1);
+
+        let total = get_app_usage_today(&conn, "Spotify");
+        assert_eq!(total, 0);
+    }
+
+    #[test]
+    fn test_get_app_usage_this_week() {
+        let conn = setup_db();
+        let now = Utc::now();
+        let start = now.to_rfc3339();
+        conn.execute(
+            "INSERT INTO activities (app_name, title, start_time, end_time, duration, category, productivity_score) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params!["VS Code", "main.rs", &start, &start, 600, "Coding", 1],
+        ).unwrap();
+
+        let total = get_app_usage_this_week(&conn, "VS Code");
+        assert_eq!(total, 600);
+    }
+
+    // --- Settings ---
+
+    #[test]
+    fn test_settings_crud() {
+        let conn = setup_db();
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('idle_timeout', '5')", []).unwrap();
+        let val: String = conn.query_row("SELECT value FROM settings WHERE key = 'idle_timeout'", [], |row| row.get(0)).unwrap();
+        assert_eq!(val, "5");
+
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('idle_timeout', '10')", []).unwrap();
+        let val: String = conn.query_row("SELECT value FROM settings WHERE key = 'idle_timeout'", [], |row| row.get(0)).unwrap();
+        assert_eq!(val, "10");
+    }
+
+    #[test]
+    fn test_settings_multiple() {
+        let conn = setup_db();
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('key1', 'val1')", []).unwrap();
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('key2', 'val2')", []).unwrap();
+
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM settings", [], |row| row.get(0)).unwrap();
+        assert_eq!(count, 2);
+    }
+
+    // --- Events / shared paths ---
+
+    #[test]
+    fn test_write_event_roundtrip() {
+        let conn = setup_db();
+        // setup_db creates activities/settings/blocked_apps but not events — the
+        // events table is created by init_db, so create it here to match.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, payload TEXT, created_at TEXT DEFAULT (datetime('now')))",
+            [],
+        ).unwrap();
+        write_event(&conn, "limit-warning", r#"{"app_name":"YouTube","limit_type":"daily","remaining_minutes":5}"#).unwrap();
+        let (ty, payload): (String, String) = conn.query_row(
+            "SELECT type, payload FROM events WHERE type = 'limit-warning'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        ).unwrap();
+        assert_eq!(ty, "limit-warning");
+        assert!(payload.contains("\"app_name\":\"YouTube\""));
+    }
+
+    #[test]
+    fn test_db_path_basename() {
+        let p = db_path();
+        assert_eq!(p.file_name().unwrap().to_str().unwrap(), "screentime.db");
+    }
+
+    // --- Activity queries ---
+
+    #[test]
+    fn test_get_daily_summary_empty() {
+        let conn = setup_db();
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        let start = format!("{}T00:00:00", today);
+        let end = format!("{}T23:59:59", today);
+
+        let mut stmt = conn.prepare("SELECT app_name, duration, category, productivity_score FROM activities WHERE start_time >= ?1 AND start_time <= ?2").unwrap();
+        let rows: Vec<(String, i64, String, i64)> = stmt.query_map(params![start, end], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        }).unwrap().filter_map(|r| r.ok()).collect();
+
+        assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn test_get_daily_summary_with_data() {
+        let conn = setup_db();
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        let start = format!("{}T12:00:00", today);
+        let end = format!("{}T12:00:30", today);
+
+        insert_activity_at(&conn, "VS Code", "main.rs", &start, &end, 300, "Coding", 1);
+        insert_activity_at(&conn, "YouTube", "Cat Video", &start, &end, 120, "Entertainment", -1);
+
+        let mut stmt = conn.prepare("SELECT app_name, duration, category, productivity_score FROM activities WHERE start_time >= ?1 AND start_time <= ?2").unwrap();
+        let rows: Vec<(String, i64, String, i64)> = stmt.query_map(params![start, end], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        }).unwrap().filter_map(|r| r.ok()).collect();
+
+        let total: i64 = rows.iter().map(|r| r.1).sum();
+        assert_eq!(total, 420);
+        assert_eq!(rows.len(), 2);
+    }
+
+    #[test]
+    fn test_productivity_score_calculation() {
+        let conn = setup_db();
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        let start = format!("{}T12:00:00", today);
+        let end = format!("{}T12:00:30", today);
+
+        insert_activity_at(&conn, "VS Code", "main.rs", &start, &end, 300, "Coding", 1);
+        insert_activity_at(&conn, "YouTube", "Cat Video", &start, &end, 100, "Entertainment", -1);
+
+        let total_duration: i64 = 400;
+        let productive_duration: i64 = 300;
+        let score = productive_duration * 100 / total_duration;
+        assert_eq!(score, 75);
+    }
+
+    // --- Clear data ---
+
+    #[test]
+    fn test_clear_all_data() {
+        let conn = setup_db();
+        insert_activity(&conn, "VS Code", "main.rs", 300, "Coding", 1);
+        conn.execute("INSERT INTO blocked_apps (app_name, is_blocked) VALUES ('YouTube', 1)", []).unwrap();
+
+        conn.execute("DELETE FROM activities", []).unwrap();
+        conn.execute("DELETE FROM blocked_apps", []).unwrap();
+
+        let act_count: i64 = conn.query_row("SELECT COUNT(*) FROM activities", [], |row| row.get(0)).unwrap();
+        let blocked_count: i64 = conn.query_row("SELECT COUNT(*) FROM blocked_apps", [], |row| row.get(0)).unwrap();
+        assert_eq!(act_count, 0);
+        assert_eq!(blocked_count, 0);
+    }
+
+    // --- Export ---
+
+    #[test]
+    fn test_csv_export() {
+        let conn = setup_db();
+        insert_activity(&conn, "VS Code", "main.rs", 300, "Coding", 1);
+
+        let mut stmt = conn.prepare("SELECT app_name, title, start_time, end_time, duration, category, productivity_score FROM activities").unwrap();
+        let mut csv = String::from("app_name,title,start_time,end_time,duration,category,productivity_score\n");
+        let rows: Vec<(String, String, String, String, i64, String, i64)> = stmt.query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?))
+        }).unwrap().filter_map(|r| r.ok()).collect();
+        for row in &rows {
+            csv.push_str(&format!("{},{},{},{},{},{},{}\n", row.0, row.1, row.2, row.3, row.4, row.5, row.6));
+        }
+
+        assert!(csv.contains("app_name,title"));
+        assert!(csv.contains("VS Code"));
+    }
+
+    #[test]
+    fn test_json_export() {
+        let conn = setup_db();
+        insert_activity(&conn, "VS Code", "main.rs", 300, "Coding", 1);
+
+        let mut stmt = conn.prepare("SELECT id, app_name, title, start_time, end_time, duration, category, productivity_score FROM activities").unwrap();
+        let activities: Vec<Activity> = stmt.query_map([], |row| {
+            Ok(Activity {
+                id: row.get(0)?,
+                app_name: row.get(1)?,
+                title: row.get(2)?,
+                start_time: row.get(3)?,
+                end_time: row.get(4)?,
+                duration: row.get(5)?,
+                category: row.get(6)?,
+                productivity_score: row.get(7)?,
+            })
+        }).unwrap().filter_map(|r| r.ok()).collect();
+
+        let json = serde_json::to_string_pretty(&activities).unwrap();
+        assert!(json.contains("VS Code"));
+        assert!(json.contains("main.rs"));
+    }
 }

@@ -19,7 +19,7 @@
             <div class="flex justify-between items-center mb-sm">
                 <div class="flex items-center gap-sm">
                     <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background-color: {item.color}">
-                        <span class="material-symbols-outlined text-white text-[18px]">{item.icon}</span>
+                        <span class="material-symbols-outlined text-on-primary text-[18px]">{item.icon}</span>
                     </div>
                     <span class="font-body-md text-body-md text-on-surface">{item.name}</span>
                 </div>

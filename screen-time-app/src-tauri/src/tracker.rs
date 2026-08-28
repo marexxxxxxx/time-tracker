@@ -3,11 +3,49 @@ use std::time::Duration;
 use chrono::Utc;
 use rusqlite::{Connection, params};
 use std::sync::{Arc, Mutex};
-use tauri::{Emitter, AppHandle};
 use tokio::time::interval;
 
 const BLOCKED_TITLE_MARKER: &str = "Blocked — ScreenTime";
 const WARNING_THRESHOLD_SECS: i64 = 5 * 60; // Warn 5 minutes before limit
+
+pub enum LimitDecision {
+    Ok,
+    Block(String),
+    Warn { limit_type: String, remaining_minutes: i64 },
+}
+
+pub fn evaluate_limits(
+    daily_secs: i64,
+    weekly_secs: i64,
+    daily_limit_min: i64,
+    weekly_limit_min: i64,
+) -> LimitDecision {
+    if daily_limit_min > 0 && daily_secs >= daily_limit_min * 60 {
+        return LimitDecision::Block("daily".to_string());
+    }
+    if weekly_limit_min > 0 && weekly_secs >= weekly_limit_min * 60 {
+        return LimitDecision::Block("weekly".to_string());
+    }
+    let daily_warn = daily_limit_min > 0
+        && daily_secs >= daily_limit_min * 60 - WARNING_THRESHOLD_SECS
+        && daily_secs < daily_limit_min * 60;
+    let weekly_warn = weekly_limit_min > 0
+        && weekly_secs >= weekly_limit_min * 60 - WARNING_THRESHOLD_SECS
+        && weekly_secs < weekly_limit_min * 60;
+    if daily_warn {
+        return LimitDecision::Warn {
+            limit_type: "daily".to_string(),
+            remaining_minutes: (daily_limit_min * 60 - daily_secs) / 60,
+        };
+    }
+    if weekly_warn {
+        return LimitDecision::Warn {
+            limit_type: "weekly".to_string(),
+            remaining_minutes: (weekly_limit_min * 60 - weekly_secs) / 60,
+        };
+    }
+    LimitDecision::Ok
+}
 
 #[derive(Debug, Clone)]
 struct WindowInfo {
@@ -16,8 +54,13 @@ struct WindowInfo {
     title: String,
 }
 
-pub fn start_window_tracking(conn: Arc<Mutex<Option<Connection>>>, app_handle: AppHandle) {
-    tauri::async_runtime::spawn(async move {
+pub fn start_window_tracking<W>(
+    conn: Arc<Mutex<Option<Connection>>>,
+    on_limit_warning: W,
+) where
+    W: Fn(String, String, i64) + Send + 'static,
+{
+    tokio::spawn(async move {
         let mut interval = interval(Duration::from_secs(3));
         let mut current_window: Option<WindowInfo> = None;
         let mut current_start = Utc::now();
@@ -50,57 +93,57 @@ pub fn start_window_tracking(conn: Arc<Mutex<Option<Connection>>>, app_handle: A
                 }
 
                 // Check time limits before recording
+                let mut should_continue = false;
+                let mut warn_decision: Option<(String, String, i64)> = None;
                 if let Ok(db_guard) = conn.lock() {
                     if let Some(db) = db_guard.as_ref() {
                         if let Some(config) = crate::get_app_limit_config(db, &active.app_name) {
                             if config.limit_enabled {
                                 let daily_secs = crate::get_app_usage_today(db, &active.app_name);
-                                let daily_limit_secs = config.daily_limit_minutes * 60;
                                 let weekly_secs = crate::get_app_usage_this_week(db, &active.app_name);
-                                let weekly_limit_secs = config.weekly_limit_minutes * 60;
 
-                                let daily_over = config.daily_limit_minutes > 0 && daily_secs >= daily_limit_secs;
-                                let weekly_over = config.weekly_limit_minutes > 0 && weekly_secs >= weekly_limit_secs;
-
-                                if daily_over || weekly_over {
-                                    // Limit exceeded — block the app
-                                    if !active.title.contains(BLOCKED_TITLE_MARKER) {
-                                        let active_clone = active.clone();
-                                        let st = session_type.clone();
-                                        tokio::task::spawn_blocking(move || {
-                                            handle_blocked_app(&active_clone, &st);
-                                        });
+                                match evaluate_limits(
+                                    daily_secs,
+                                    weekly_secs,
+                                    config.daily_limit_minutes,
+                                    config.weekly_limit_minutes,
+                                ) {
+                                    LimitDecision::Block(_) => {
+                                        should_continue = true;
                                     }
-                                    current_window = None;
-                                    current_id = None;
-                                    warned_apps.remove(&active.app_name);
-                                    continue;
-                                }
-
-                                // Warning threshold check (5 min before limit)
-                                let daily_warn = config.daily_limit_minutes > 0
-                                    && daily_secs >= daily_limit_secs - WARNING_THRESHOLD_SECS
-                                    && daily_secs < daily_limit_secs;
-                                let weekly_warn = config.weekly_limit_minutes > 0
-                                    && weekly_secs >= weekly_limit_secs - WARNING_THRESHOLD_SECS
-                                    && weekly_secs < weekly_limit_secs;
-
-                                if (daily_warn || weekly_warn) && !warned_apps.contains(&active.app_name) {
-                                    warned_apps.insert(active.app_name.clone());
-                                    let remaining = if daily_warn {
-                                        (daily_limit_secs - daily_secs) / 60
-                                    } else {
-                                        (weekly_limit_secs - weekly_secs) / 60
-                                    };
-                                    let limit_type = if daily_warn { "daily" } else { "weekly" };
-                                    let _ = app_handle.emit("limit-warning", serde_json::json!({
-                                        "app_name": active.app_name,
-                                        "limit_type": limit_type,
-                                        "remaining_minutes": remaining,
-                                    }));
+                                    LimitDecision::Warn { limit_type, remaining_minutes } => {
+                                        warn_decision = Some((
+                                            active.app_name.clone(),
+                                            limit_type,
+                                            remaining_minutes,
+                                        ));
+                                    }
+                                    LimitDecision::Ok => {}
                                 }
                             }
                         }
+                    }
+                }
+
+                if should_continue {
+                    // Limit exceeded — block the app
+                    if !active.title.contains(BLOCKED_TITLE_MARKER) {
+                        let active_clone = active.clone();
+                        let st = session_type.clone();
+                        tokio::task::spawn_blocking(move || {
+                            handle_blocked_app(&active_clone, &st);
+                        });
+                    }
+                    current_window = None;
+                    current_id = None;
+                    warned_apps.remove(&active.app_name);
+                    continue;
+                }
+
+                if let Some((warn_app, limit_type, remaining_minutes)) = warn_decision {
+                    if !warned_apps.contains(&warn_app) {
+                        warned_apps.insert(warn_app.clone());
+                        on_limit_warning(warn_app, limit_type, remaining_minutes);
                     }
                 }
 
@@ -126,6 +169,20 @@ pub fn start_window_tracking(conn: Arc<Mutex<Option<Connection>>>, app_handle: A
                     }
                     _ => {
                         let now = Utc::now();
+
+                        // Finalize the old activity's duration before switching
+                        if let Some(id) = current_id {
+                            let duration = (now - current_start).num_seconds();
+                            if let Ok(mut db_guard) = conn.lock() {
+                                if let Some(db) = db_guard.as_mut() {
+                                    let _ = db.execute(
+                                        "UPDATE activities SET end_time = ?1, duration = ?2 WHERE id = ?3",
+                                        params![now.to_rfc3339(), duration, id]
+                                    );
+                                }
+                            }
+                        }
+
                         current_start = now;
                         current_window = Some(active.clone());
 
@@ -272,6 +329,34 @@ fn extract_browser_site(app_name: &str, title: &str) -> Option<String> {
     Some(cleaned)
 }
 
+const KNOWN_APP_CLASSES: &[(&str, &str)] = &[
+    ("Alacritty", "Alacritty"),
+    ("kitty", "Kitty"),
+    ("org.gnome.Terminal", "Terminal"),
+    ("org.gnome.Console", "Console"),
+    ("foot", "Foot"),
+    ("wezterm", "WezTerm"),
+    ("OC", "OpenCode"),
+];
+
+fn normalize_app_name(app_name: &str, title: &str) -> String {
+    // Check known window classes first
+    for (class, clean_name) in KNOWN_APP_CLASSES {
+        if app_name.eq_ignore_ascii_case(class) {
+            return clean_name.to_string();
+        }
+    }
+
+    // Fix terminal prompt patterns: "user@host: ~/dir" → "Terminal"
+    if app_name.contains('@') && app_name.contains(':') && (app_name.contains('~') || app_name.contains('/')) {
+        return "Terminal".to_string();
+    }
+
+    // Browser suffix stripping is already handled by extract_browser_site
+
+    app_name.to_string()
+}
+
 fn categorize_app(app_name: &str, title: &str) -> String {
     let app_lower = app_name.to_lowercase();
     let title_lower = title.to_lowercase();
@@ -309,6 +394,9 @@ fn get_active_window() -> Option<WindowInfo> {
     if let Some(site) = extract_browser_site(&info.app_name, &info.title) {
         info.app_name = site;
     }
+
+    // Normalize app name (fix terminal prompts, map known classes)
+    info.app_name = normalize_app_name(&info.app_name, &info.title);
 
     Some(info)
 }
@@ -387,4 +475,238 @@ fn get_x11_active_window() -> Option<WindowInfo> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_categorize_app_coding() {
+        assert_eq!(categorize_app("Visual Studio Code", "main.rs"), "Coding");
+        assert_eq!(categorize_app("Alacritty", "user@host: ~/project"), "Coding");
+        assert_eq!(categorize_app("IntelliJ IDEA", "App.kt"), "Coding");
+        assert_eq!(categorize_app("kitty", "nvim file.txt"), "Coding");
+        assert_eq!(categorize_app("Terminal", "bash"), "Coding");
+    }
+
+    #[test]
+    fn test_categorize_app_design() {
+        assert_eq!(categorize_app("Figma", "My Design File"), "Design");
+        assert_eq!(categorize_app("GIMP", "photo.xcf"), "Design");
+        assert_eq!(categorize_app("Inkscape", "logo.svg"), "Design");
+    }
+
+    #[test]
+    fn test_categorize_app_entertainment() {
+        assert_eq!(categorize_app("YouTube", "Cat Videos"), "Entertainment");
+        assert_eq!(categorize_app("Spotify", "Focus Playlist"), "Entertainment");
+        assert_eq!(categorize_app("Netflix", "The Office"), "Entertainment");
+        assert_eq!(categorize_app("VLC", "movie.mkv"), "Entertainment");
+        assert_eq!(categorize_app("Steam", "Half-Life 3"), "Entertainment");
+        assert_eq!(categorize_app("firefox", "Twitch - Mozilla Firefox"), "Entertainment");
+        assert_eq!(categorize_app("chromium", "YouTube - Chromium"), "Entertainment");
+    }
+
+    #[test]
+    fn test_categorize_app_communication() {
+        assert_eq!(categorize_app("Slack", "team-channel"), "Communication");
+        assert_eq!(categorize_app("Discord", "voice-chat"), "Communication");
+        assert_eq!(categorize_app("Microsoft Teams", "Meeting"), "Communication");
+    }
+
+    #[test]
+    fn test_categorize_app_neutral() {
+        assert_eq!(categorize_app("chromium", "GitHub"), "Neutral");
+        assert_eq!(categorize_app("firefox", "Stack Overflow"), "Neutral");
+        assert_eq!(categorize_app("Nautilus", "Home"), "Neutral");
+        assert_eq!(categorize_app("Unknown App", "Some Title"), "Neutral");
+    }
+
+    #[test]
+    fn test_extract_browser_site_chromium() {
+        let result = extract_browser_site("chromium", "GitHub - Chromium");
+        assert_eq!(result, Some("GitHub".to_string()));
+    }
+
+    #[test]
+    fn test_extract_browser_site_firefox_with_em_dash() {
+        let result = extract_browser_site("firefox", "Stack Overflow — Mozilla Firefox");
+        assert_eq!(result, Some("Stack Overflow".to_string()));
+    }
+
+    #[test]
+    fn test_extract_browser_site_with_pipe() {
+        let result = extract_browser_site("google-chrome", "My Page | Google Docs — Google Chrome");
+        assert_eq!(result, Some("My Page".to_string()));
+    }
+
+    #[test]
+    fn test_extract_browser_site_not_browser() {
+        let result = extract_browser_site("Alacritty", "user@host: ~/dir");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_extract_browser_site_empty_after_strip() {
+        let result = extract_browser_site("chromium", " — Chromium");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_extract_browser_site_fallback_cleaned() {
+        let result = extract_browser_site("chromium", "Some Title Here");
+        assert_eq!(result, Some("Some Title Here".to_string()));
+    }
+
+    #[test]
+    fn test_url_encode_simple() {
+        assert_eq!(url_encode("hello"), "hello");
+        assert_eq!(url_encode("hello world"), "hello%20world");
+    }
+
+    #[test]
+    fn test_url_encode_special_chars() {
+        assert_eq!(url_encode("a&b=c"), "a%26b%3Dc");
+        assert_eq!(url_encode("100%"), "100%25");
+        assert_eq!(url_encode("path/to/file"), "path%2Fto%2Ffile");
+    }
+
+    #[test]
+    fn test_url_encode_empty() {
+        assert_eq!(url_encode(""), "");
+    }
+
+    #[test]
+    fn test_url_encode_safe_chars() {
+        assert_eq!(url_encode("ABCxyz012-_.~"), "ABCxyz012-_.~");
+    }
+
+    #[test]
+    fn test_find_focused_node_found() {
+        let tree = serde_json::json!({
+            "nodes": [
+                { "focused": false, "name": "Window 1" },
+                { "focused": true, "name": "Focused Window", "app_id": "firefox" }
+            ]
+        });
+        let result = find_focused_node(&tree);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap()["name"].as_str().unwrap(), "Focused Window");
+    }
+
+    #[test]
+    fn test_find_focused_node_nested() {
+        let tree = serde_json::json!({
+            "nodes": [
+                { "focused": false, "nodes": [
+                    { "focused": true, "name": "Deep Window" }
+                ]}
+            ]
+        });
+        let result = find_focused_node(&tree);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap()["name"].as_str().unwrap(), "Deep Window");
+    }
+
+    #[test]
+    fn test_find_focused_node_floating() {
+        let tree = serde_json::json!({
+            "nodes": [],
+            "floating_nodes": [
+                { "focused": true, "name": "Floating Window" }
+            ]
+        });
+        let result = find_focused_node(&tree);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap()["name"].as_str().unwrap(), "Floating Window");
+    }
+
+    #[test]
+    fn test_find_focused_node_none_focused() {
+        let tree = serde_json::json!({
+            "nodes": [
+                { "focused": false, "name": "Window 1" }
+            ]
+        });
+        assert!(find_focused_node(&tree).is_none());
+    }
+
+    #[test]
+    fn test_normalize_known_app_classes() {
+        assert_eq!(normalize_app_name("Alacritty", "user@host: ~/dir"), "Alacritty");
+        assert_eq!(normalize_app_name("kitty", "nvim file.txt"), "Kitty");
+        assert_eq!(normalize_app_name("foot", "bash"), "Foot");
+        assert_eq!(normalize_app_name("wezterm", "top"), "WezTerm");
+    }
+
+    #[test]
+    fn test_normalize_terminal_prompt() {
+        assert_eq!(normalize_app_name("user@kiserver: ~/max", "bash"), "Terminal");
+        assert_eq!(normalize_app_name("user@marexlaptop:~", "zsh"), "Terminal");
+        assert_eq!(normalize_app_name("user@server: /home/user/project", "fish"), "Terminal");
+    }
+
+    #[test]
+    fn test_normalize_passthrough() {
+        assert_eq!(normalize_app_name("Visual Studio Code", "main.rs"), "Visual Studio Code");
+        assert_eq!(normalize_app_name("YouTube", "Cat Video"), "YouTube");
+        assert_eq!(normalize_app_name("Nautilus", "Home"), "Nautilus");
+    }
+
+    #[test]
+    fn test_evaluate_limits_ok() {
+        use super::LimitDecision;
+        assert!(matches!(
+            evaluate_limits(0, 0, 60, 300),
+            LimitDecision::Ok
+        ));
+    }
+
+    #[test]
+    fn test_evaluate_limits_block_daily() {
+        use super::LimitDecision;
+        assert!(matches!(
+            evaluate_limits(60 * 60, 0, 60, 300),
+            LimitDecision::Block(t) if t == "daily"
+        ));
+    }
+
+    #[test]
+    fn test_evaluate_limits_block_weekly() {
+        use super::LimitDecision;
+        assert!(matches!(
+            evaluate_limits(0, 301 * 60, 60, 300),
+            LimitDecision::Block(t) if t == "weekly"
+        ));
+    }
+
+    #[test]
+    fn test_evaluate_limits_warn_daily() {
+        use super::LimitDecision;
+        // 55 min used of 60 daily = warn (5 min remaining)
+        assert!(matches!(
+            evaluate_limits(55 * 60, 0, 60, 300),
+            LimitDecision::Warn { limit_type, remaining_minutes } if limit_type == "daily" && remaining_minutes == 5
+        ));
+    }
+
+    #[test]
+    fn test_evaluate_limits_warn_weekly() {
+        use super::LimitDecision;
+        // 295 min used of 300 weekly = warn (5 min remaining)
+        assert!(matches!(
+            evaluate_limits(0, 295 * 60, 60, 300),
+            LimitDecision::Warn { limit_type, remaining_minutes } if limit_type == "weekly" && remaining_minutes == 5
+        ));
+    }
+
+    #[test]
+    fn test_evaluate_limits_not_warn_when_not_close() {
+        use super::LimitDecision;
+        assert!(matches!(
+            evaluate_limits(30 * 60, 0, 60, 300),
+            LimitDecision::Ok
+        ));
+    }
 }

@@ -34,7 +34,7 @@
             <h2 class="font-headline-md text-headline-md text-on-surface mb-md">Support</h2>
             <div class="font-body-md text-on-surface-variant space-y-sm">
                 <p>Found a bug or have a feature request?</p>
-                <a href="https://github.com" class="text-primary hover:underline inline-flex items-center gap-xs">
+                <a href="https://github.com/marexxxxxxx/time-tracker/issues" class="text-primary hover:underline inline-flex items-center gap-xs">
                     <span class="material-symbols-outlined text-[18px]">open_in_new</span>
                     Open an issue on GitHub
                 </a>

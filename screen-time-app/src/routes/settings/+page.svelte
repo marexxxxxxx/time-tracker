@@ -7,6 +7,14 @@
 
     onMount(() => settings.load());
 
+    let autostartEnabled = $state(false);
+
+    async function toggleAutostart() {
+        const next = !autostartEnabled;
+        await invoke('set_autostart', { enabled: next });
+        autostartEnabled = next;
+    }
+
     function handleThemeChange(value: string) {
         settings.update('theme', value);
         theme.set(value as 'system' | 'light' | 'dark');
@@ -74,7 +82,8 @@
                 <select
                     value={$settings.idle_timeout}
                     onchange={(e) => settings.update('idle_timeout', (e.target as HTMLSelectElement).value)}
-                    class="bg-surface-container-low border border-outline-variant/30 rounded-lg px-md py-sm font-body-md text-on-surface"
+                    class="bg-surface-container-low border border-outline-variant/30 rounded-lg px-md py-sm font-body-md"
+                    style="color: var(--color-on-surface);"
                 >
                     <option value="5">5 minutes</option>
                     <option value="10">10 minutes</option>
@@ -118,6 +127,21 @@
                     onclick={() => settings.update('daily_summary', $settings.daily_summary === 'true' ? 'false' : 'true')}
                 >
                     <span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform {$settings.daily_summary === 'true' ? 'translate-x-6' : ''}"></span>
+                </button>
+            </label>
+        </section>
+
+        <!-- Startup -->
+        <section class="bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-lg">
+            <h2 class="font-headline-md text-headline-md text-on-surface mb-lg">Startup</h2>
+            <label class="flex items-center justify-between py-sm">
+                <span class="font-body-md text-on-surface">Start in background at login</span>
+                <button
+                    aria-label="Toggle background start at login"
+                    class="w-12 h-6 rounded-full transition-colors relative {autostartEnabled ? 'bg-primary' : 'bg-outline-variant'}"
+                    onclick={toggleAutostart}
+                >
+                    <span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform {autostartEnabled ? 'translate-x-6' : ''}"></span>
                 </button>
             </label>
         </section>

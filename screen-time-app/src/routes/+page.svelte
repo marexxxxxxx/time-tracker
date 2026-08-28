@@ -34,15 +34,15 @@
 
         <div class="col-span-12 lg:col-span-8 bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-lg shadow-[0_4px_20px_rgba(0,0,0,0.04)] dark:bg-surface-container dark:border-outline/20 flex flex-col">
             <div class="flex justify-between items-center mb-xl">
-                <h2 class="font-headline-md text-headline-md text-on-surface">Daily Usage</h2>
+                <h2 class="font-headline-md text-headline-md text-on-surface">{$selectedRange === 'Day' ? 'Daily' : $selectedRange === 'Week' ? 'Weekly' : 'Monthly'} Usage</h2>
                 <TimeRangeSelector selected={$selectedRange} onselect={(opt) => selectedRange.set(opt as 'Day' | 'Week' | 'Month')} />
             </div>
             <div class="flex-1 min-h-[200px]">
                 {#if summary && summary.app_usage.length > 0}
                     <BarChart
                         labels={summary.app_usage.slice(0, 6).map(a => a.app_name)}
-                        data={summary.app_usage.slice(0, 6).map(a => a.duration / 3600)}
-                        unit="hours"
+                        data={summary.app_usage.slice(0, 6).map(a => a.duration / 60)}
+                        unit="min"
                     />
                 {:else}
                     <div class="flex items-center justify-center h-full text-on-surface-variant font-body-md">No data yet today</div>

@@ -14,6 +14,10 @@ edition = "2021"
 name = "screen_time_app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[[bin]]
+name = "screen-time-daemon"
+path = "src/bin/daemon.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
