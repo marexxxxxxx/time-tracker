@@ -4,9 +4,28 @@ use rusqlite::{Connection, params};
 use std::sync::{Arc, Mutex};
 use tauri::{Manager, State};
 
-mod blocker;
-mod idle;
-mod tracker;
+pub mod blocker;
+pub mod idle;
+pub mod tracker;
+
+// Shared data-directory resolution (mirrors Tauri app_data_dir on Linux).
+pub fn app_data_dir() -> std::path::PathBuf {
+    let identifier = "marexxxxxxx.screen-time-app";
+    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+        std::path::PathBuf::from(xdg).join(identifier)
+    } else if let Ok(home) = std::env::var("HOME") {
+        std::path::PathBuf::from(home)
+            .join(".local")
+            .join("share")
+            .join(identifier)
+    } else {
+        std::path::PathBuf::from(identifier)
+    }
+}
+
+pub fn db_path() -> std::path::PathBuf {
+    app_data_dir().join("screentime.db")
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Activity {
@@ -453,6 +472,13 @@ pub fn get_app_usage_this_week(conn: &Connection, app_name: &str) -> i64 {
     ).unwrap_or(0)
 }
 
+pub fn write_event(conn: &Connection, event_type: &str, payload: &str) -> rusqlite::Result<usize> {
+    conn.execute(
+        "INSERT INTO events (type, payload) VALUES (?1, ?2)",
+        params![event_type, payload],
+    )
+}
+
 fn seed_database(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
     let count: i64 = conn.query_row("SELECT COUNT(*) FROM activities", [], |row| row.get(0))?;
 
@@ -487,11 +513,15 @@ fn seed_database(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn init_db(db_path: &std::path::Path) -> Result<Connection, Box<dyn std::error::Error>> {
+pub fn init_db(db_path: &std::path::Path) -> Result<Connection, Box<dyn std::error::Error>> {
     let conn = Connection::open(db_path)?;
 
     // Enable WAL mode for better concurrency
     conn.pragma_update(None, "journal_mode", "WAL")?;
+
+    // Wait up to 5s instead of failing with "database is locked" when the GUI
+    // and daemon access the DB concurrently.
+    conn.busy_timeout(std::time::Duration::from_secs(5))?;
 
     conn.execute("
         CREATE TABLE IF NOT EXISTS activities (
@@ -535,6 +565,16 @@ fn init_db(db_path: &std::path::Path) -> Result<Connection, Box<dyn std::error::
     let _ = conn.execute("ALTER TABLE blocked_apps ADD COLUMN daily_limit_minutes INTEGER NOT NULL DEFAULT 0", []);
     let _ = conn.execute("ALTER TABLE blocked_apps ADD COLUMN weekly_limit_minutes INTEGER NOT NULL DEFAULT 0", []);
     let _ = conn.execute("ALTER TABLE blocked_apps ADD COLUMN limit_enabled INTEGER NOT NULL DEFAULT 0", []);
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            type TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );",
+        [],
+    )?;
 
     Ok(conn)
 }
@@ -710,37 +750,30 @@ pub fn run() {
         .setup(|app| {
             let app_handle = app.handle().clone();
 
-            // Initialize db connection
-            if let Ok(app_dir) = app_handle.path().app_data_dir() {
-                if !app_dir.exists() {
-                    let _ = std::fs::create_dir_all(&app_dir);
+            // Initialize db connection using the same path the daemon uses
+            let app_dir = crate::app_data_dir();
+            if !app_dir.exists() {
+                let _ = std::fs::create_dir_all(&app_dir);
+            }
+            let db_path = crate::db_path();
+
+            match init_db(&db_path) {
+                Ok(conn) => {
+                    // Seed
+                    if let Err(e) = seed_database(&conn) {
+                        eprintln!("Failed to seed database: {}", e);
+                    }
+
+                    let shared_conn = Arc::new(Mutex::new(Some(conn)));
+
+                    // Save conn to state first
+                    let state: State<AppState> = app_handle.state();
+                    *state.conn.lock().unwrap() = shared_conn.lock().unwrap().take();
                 }
-                let db_path = app_dir.join("screentime.db");
-
-                match init_db(&db_path) {
-                    Ok(conn) => {
-                        // Seed
-                        if let Err(e) = seed_database(&conn) {
-                            eprintln!("Failed to seed database: {}", e);
-                        }
-
-                        let shared_conn = Arc::new(Mutex::new(Some(conn)));
-
-                        // Save conn to state first
-                        let state: State<AppState> = app_handle.state();
-                        *state.conn.lock().unwrap() = shared_conn.lock().unwrap().take();
-
-                        // Start Window Tracking by cloning the state's Arc
-                        tracker::start_window_tracking(Arc::clone(&state.conn), app_handle.clone());
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to initialize database: {}", e);
-                    }
+                Err(e) => {
+                    eprintln!("Failed to initialize database: {}", e);
                 }
             }
-
-            // Start idle detection
-            idle::start_idle_detection(app.handle().clone());
 
             Ok(())
         })
@@ -984,6 +1017,33 @@ mod tests {
 
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM settings", [], |row| row.get(0)).unwrap();
         assert_eq!(count, 2);
+    }
+
+    // --- Events / shared paths ---
+
+    #[test]
+    fn test_write_event_roundtrip() {
+        let conn = setup_db();
+        // setup_db creates activities/settings/blocked_apps but not events — the
+        // events table is created by init_db, so create it here to match.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, payload TEXT, created_at TEXT DEFAULT (datetime('now')))",
+            [],
+        ).unwrap();
+        write_event(&conn, "limit-warning", r#"{"app_name":"YouTube","limit_type":"daily","remaining_minutes":5}"#).unwrap();
+        let (ty, payload): (String, String) = conn.query_row(
+            "SELECT type, payload FROM events WHERE type = 'limit-warning'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        ).unwrap();
+        assert_eq!(ty, "limit-warning");
+        assert!(payload.contains("\"app_name\":\"YouTube\""));
+    }
+
+    #[test]
+    fn test_db_path_basename() {
+        let p = db_path();
+        assert_eq!(p.file_name().unwrap().to_str().unwrap(), "screentime.db");
     }
 
     // --- Activity queries ---
