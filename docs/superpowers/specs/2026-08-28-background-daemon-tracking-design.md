@@ -29,8 +29,12 @@ mehr selbst.
   wiederverwendetem `init_db`), läuft mit tokio, führt den Tracking-Loop aus.
 - **GUI = Viewer:** `run()`/`setup()` in `lib.rs` startet den Tracking-Loop
   **nicht** mehr. Die GUI liest nur noch die DB an.
-- **Autostart:** `tauri-plugin-autostart` sorgt dafür, dass der Daemon beim
-  Login startet.
+- **Autostart:** Manuell erzeugter Autostart-Eintrag
+  (`~/.config/autostart/screen-time-daemon.desktop`), der **direkt auf das
+  Daemon-Binary** zeigt (nicht auf die GUI). `tauri-plugin-autostart` wird
+  **nicht** verwendet, weil es das aktuelle (GUI-)Binary starten würde. Die GUI
+  bekommt einen Toggle in den Settings (enable/disable), der diesen Eintrag
+  schreibt/entfernt.
 - **Lebenszyklus:** Single-Instance-Guard (PID-File), damit nur ein Daemon
   läuft. Die GUI startet den Daemon beim Öffnen, falls er nicht läuft, und
   beendet ihn beim Schließen **nicht**.
@@ -47,20 +51,37 @@ mehr selbst.
 
 ## Datei-Änderungen
 
-1. `Cargo.toml`: `tauri-plugin-autostart = "2"` hinzufügen.
+1. ~~`tauri-plugin-autostart = "2"` hinzufügen.~~ → **Nicht** benötigt; Autostart
+   wird als Desktop-Eintrag manuell geschrieben (siehe Abschnitt Autostart).
 2. `tauri` feature `tray-icon` **nicht** benötigt (kein Tray bei GUI=Viewer).
 3. `lib.rs`:
    - `init_db` und benötigte Kernfunktionen öffentlich machen (`pub`),
      falls der Daemon sie braucht (Daemon ist eigenes bin-Target → braucht
      `pub` API).
    - `setup()`: `start_window_tracking`-Aufruf entfernen; stattdessen Daemon
-     sicherstellen (starten falls nicht läuft) und Autostart-Plugin
+     sicherstellen (starten falls nicht läuft) und die Autostart-Toggle-Commands
      registrieren.
 4. `tracker.rs` / `idle.rs`: von Tauri entkoppeln; Emits durch optionales
    Callback ersetzen.
 5. Neu `src-tauri/src/bin/daemon.rs`: Einstiegspunkt, öffnet DB, startet
    Tracking- und Idle-Loop, PID-File-Guard.
 6. `install.sh` / Bundle: Daemon-Binary mit installieren; Autostart-Entry.
+7. `lib.rs`: Autostart-Toggle-Commands (`set_autostart(enabled)`) schreiben bzw.
+   entfernen den `screen-time-daemon.desktop`-Eintrag.
+
+## Autostart-Eintrag (konkret)
+
+`~/.config/autostart/screen-time-daemon.desktop`:
+```
+[Desktop Entry]
+Type=Application
+Name=Screen Time Daemon
+Exec=/home/<USER>/.local/bin/screen-time-daemon
+Terminal=false
+X-GNOME-Autostart-enabled=true
+```
+Die GUI erstellt/entfernt ihn über einen Settings-Toggle. `/dev/null`-Umleitung
+o.Ä. ist nicht nötig; der Daemon läuft headless ohne Fenster.
 
 ## Inhaltstest / Verifikation
 
