@@ -3,11 +3,49 @@ use std::time::Duration;
 use chrono::Utc;
 use rusqlite::{Connection, params};
 use std::sync::{Arc, Mutex};
-use tauri::{Emitter, AppHandle};
 use tokio::time::interval;
 
 const BLOCKED_TITLE_MARKER: &str = "Blocked — ScreenTime";
 const WARNING_THRESHOLD_SECS: i64 = 5 * 60; // Warn 5 minutes before limit
+
+pub enum LimitDecision {
+    Ok,
+    Block(String),
+    Warn { limit_type: String, remaining_minutes: i64 },
+}
+
+pub fn evaluate_limits(
+    daily_secs: i64,
+    weekly_secs: i64,
+    daily_limit_min: i64,
+    weekly_limit_min: i64,
+) -> LimitDecision {
+    if daily_limit_min > 0 && daily_secs >= daily_limit_min * 60 {
+        return LimitDecision::Block("daily".to_string());
+    }
+    if weekly_limit_min > 0 && weekly_secs >= weekly_limit_min * 60 {
+        return LimitDecision::Block("weekly".to_string());
+    }
+    let daily_warn = daily_limit_min > 0
+        && daily_secs >= daily_limit_min * 60 - WARNING_THRESHOLD_SECS
+        && daily_secs < daily_limit_min * 60;
+    let weekly_warn = weekly_limit_min > 0
+        && weekly_secs >= weekly_limit_min * 60 - WARNING_THRESHOLD_SECS
+        && weekly_secs < weekly_limit_min * 60;
+    if daily_warn {
+        return LimitDecision::Warn {
+            limit_type: "daily".to_string(),
+            remaining_minutes: (daily_limit_min * 60 - daily_secs) / 60,
+        };
+    }
+    if weekly_warn {
+        return LimitDecision::Warn {
+            limit_type: "weekly".to_string(),
+            remaining_minutes: (weekly_limit_min * 60 - weekly_secs) / 60,
+        };
+    }
+    LimitDecision::Ok
+}
 
 #[derive(Debug, Clone)]
 struct WindowInfo {
@@ -16,8 +54,14 @@ struct WindowInfo {
     title: String,
 }
 
-pub fn start_window_tracking(conn: Arc<Mutex<Option<Connection>>>, app_handle: AppHandle) {
-    tauri::async_runtime::spawn(async move {
+pub fn start_window_tracking<W>(
+    conn: Arc<Mutex<Option<Connection>>>,
+    on_limit_warning: W,
+) where
+    W: Fn(String, String, i64) + Send + 'static,
+{
+    tokio::spawn(async move {
+        let on_limit_warning = on_limit_warning;
         let mut interval = interval(Duration::from_secs(3));
         let mut current_window: Option<WindowInfo> = None;
         let mut current_start = Utc::now();
@@ -55,49 +99,39 @@ pub fn start_window_tracking(conn: Arc<Mutex<Option<Connection>>>, app_handle: A
                         if let Some(config) = crate::get_app_limit_config(db, &active.app_name) {
                             if config.limit_enabled {
                                 let daily_secs = crate::get_app_usage_today(db, &active.app_name);
-                                let daily_limit_secs = config.daily_limit_minutes * 60;
                                 let weekly_secs = crate::get_app_usage_this_week(db, &active.app_name);
-                                let weekly_limit_secs = config.weekly_limit_minutes * 60;
 
-                                let daily_over = config.daily_limit_minutes > 0 && daily_secs >= daily_limit_secs;
-                                let weekly_over = config.weekly_limit_minutes > 0 && weekly_secs >= weekly_limit_secs;
-
-                                if daily_over || weekly_over {
-                                    // Limit exceeded — block the app
-                                    if !active.title.contains(BLOCKED_TITLE_MARKER) {
-                                        let active_clone = active.clone();
-                                        let st = session_type.clone();
-                                        tokio::task::spawn_blocking(move || {
-                                            handle_blocked_app(&active_clone, &st);
-                                        });
+                                match evaluate_limits(
+                                    daily_secs,
+                                    weekly_secs,
+                                    config.daily_limit_minutes,
+                                    config.weekly_limit_minutes,
+                                ) {
+                                    LimitDecision::Block(_) => {
+                                        // Limit exceeded — block the app
+                                        if !active.title.contains(BLOCKED_TITLE_MARKER) {
+                                            let active_clone = active.clone();
+                                            let st = session_type.clone();
+                                            tokio::task::spawn_blocking(move || {
+                                                handle_blocked_app(&active_clone, &st);
+                                            });
+                                        }
+                                        current_window = None;
+                                        current_id = None;
+                                        warned_apps.remove(&active.app_name);
+                                        continue;
                                     }
-                                    current_window = None;
-                                    current_id = None;
-                                    warned_apps.remove(&active.app_name);
-                                    continue;
-                                }
-
-                                // Warning threshold check (5 min before limit)
-                                let daily_warn = config.daily_limit_minutes > 0
-                                    && daily_secs >= daily_limit_secs - WARNING_THRESHOLD_SECS
-                                    && daily_secs < daily_limit_secs;
-                                let weekly_warn = config.weekly_limit_minutes > 0
-                                    && weekly_secs >= weekly_limit_secs - WARNING_THRESHOLD_SECS
-                                    && weekly_secs < weekly_limit_secs;
-
-                                if (daily_warn || weekly_warn) && !warned_apps.contains(&active.app_name) {
-                                    warned_apps.insert(active.app_name.clone());
-                                    let remaining = if daily_warn {
-                                        (daily_limit_secs - daily_secs) / 60
-                                    } else {
-                                        (weekly_limit_secs - weekly_secs) / 60
-                                    };
-                                    let limit_type = if daily_warn { "daily" } else { "weekly" };
-                                    let _ = app_handle.emit("limit-warning", serde_json::json!({
-                                        "app_name": active.app_name,
-                                        "limit_type": limit_type,
-                                        "remaining_minutes": remaining,
-                                    }));
+                                    LimitDecision::Warn { limit_type, remaining_minutes } => {
+                                        if !warned_apps.contains(&active.app_name) {
+                                            warned_apps.insert(active.app_name.clone());
+                                            on_limit_warning(
+                                                active.app_name.clone(),
+                                                limit_type,
+                                                remaining_minutes,
+                                            );
+                                        }
+                                    }
+                                    LimitDecision::Ok => {}
                                 }
                             }
                         }
@@ -609,5 +643,61 @@ mod tests {
         assert_eq!(normalize_app_name("Visual Studio Code", "main.rs"), "Visual Studio Code");
         assert_eq!(normalize_app_name("YouTube", "Cat Video"), "YouTube");
         assert_eq!(normalize_app_name("Nautilus", "Home"), "Nautilus");
+    }
+
+    #[test]
+    fn test_evaluate_limits_ok() {
+        use super::LimitDecision;
+        assert!(matches!(
+            evaluate_limits(0, 0, 60, 300),
+            LimitDecision::Ok
+        ));
+    }
+
+    #[test]
+    fn test_evaluate_limits_block_daily() {
+        use super::LimitDecision;
+        assert!(matches!(
+            evaluate_limits(60 * 60, 0, 60, 300),
+            LimitDecision::Block(t) if t == "daily"
+        ));
+    }
+
+    #[test]
+    fn test_evaluate_limits_block_weekly() {
+        use super::LimitDecision;
+        assert!(matches!(
+            evaluate_limits(0, 301 * 60, 60, 300),
+            LimitDecision::Block(t) if t == "weekly"
+        ));
+    }
+
+    #[test]
+    fn test_evaluate_limits_warn_daily() {
+        use super::LimitDecision;
+        // 55 min used of 60 daily = warn (5 min remaining)
+        assert!(matches!(
+            evaluate_limits(55 * 60, 0, 60, 300),
+            LimitDecision::Warn { limit_type, remaining_minutes } if limit_type == "daily" && remaining_minutes == 5
+        ));
+    }
+
+    #[test]
+    fn test_evaluate_limits_warn_weekly() {
+        use super::LimitDecision;
+        // 295 min used of 300 weekly = warn (5 min remaining)
+        assert!(matches!(
+            evaluate_limits(0, 295 * 60, 60, 300),
+            LimitDecision::Warn { limit_type, remaining_minutes } if limit_type == "weekly" && remaining_minutes == 5
+        ));
+    }
+
+    #[test]
+    fn test_evaluate_limits_not_warn_when_not_close() {
+        use super::LimitDecision;
+        assert!(matches!(
+            evaluate_limits(30 * 60, 0, 60, 300),
+            LimitDecision::Ok
+        ));
     }
 }
