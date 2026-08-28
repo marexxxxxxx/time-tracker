@@ -23,8 +23,11 @@ mehr selbst.
 - **Gemeinsames Kernmodul:** `tracker.rs` und `idle.rs` werden von Tauri-Typen
   (`AppHandle`, `tauri::async_runtime::spawn`, `Emitter`) entkoppelt. Die
   Tracking-/Idle-/Blocking-Logik arbeitet auf `Connection` + tokio und ist
-  frei von Tauri. Der GUI-Emit (`limit-warning`, `idle-state-changed`) wird
-  durch ein optionales Ereignis-Callback ersetzt, das nur die GUI nutzt.
+  frei von Tauri.
+- **Limit-/Idle-Ereignisse via DB:** Der Daemon schreibt anstehende
+  Limit-Warnungen (`limit-warning`) in eine kleine `events`-Tabelle in der DB.
+  Die GUI pollt diese Tabelle (sie pollt `fetchAll` bereits alle 5s) und zeigt
+  den Toast. Kein direkter Prozess-IPC nötig; konsistent mit „GUI = Viewer“.
 - **Daemon-Binary:** `src-tauri/src/bin/daemon.rs`. Öffnet dieselbe DB (via
   wiederverwendetem `init_db`), läuft mit tokio, führt den Tracking-Loop aus.
 - **GUI = Viewer:** `run()`/`setup()` in `lib.rs` startet den Tracking-Loop
@@ -61,13 +64,17 @@ mehr selbst.
    - `setup()`: `start_window_tracking`-Aufruf entfernen; stattdessen Daemon
      sicherstellen (starten falls nicht läuft) und die Autostart-Toggle-Commands
      registrieren.
-4. `tracker.rs` / `idle.rs`: von Tauri entkoppeln; Emits durch optionales
-   Callback ersetzen.
+4. `tracker.rs` / `idle.rs`: von Tauri entkoppeln; Tauri-Emits durch Schreiben
+   in die `events`-Tabelle ersetzen (Daemon-seitig).
 5. Neu `src-tauri/src/bin/daemon.rs`: Einstiegspunkt, öffnet DB, startet
    Tracking- und Idle-Loop, PID-File-Guard.
 6. `install.sh` / Bundle: Daemon-Binary mit installieren; Autostart-Entry.
 7. `lib.rs`: Autostart-Toggle-Commands (`set_autostart(enabled)`) schreiben bzw.
    entfernen den `screen-time-daemon.desktop`-Eintrag.
+8. `init_db` (lib.rs:490): `events`-Tabelle anlegen (id, type, payload, created_at)
+   und `PRAGMA busy_timeout` setzen.
+9. Frontend: GUI pollt `events`-Tabelle und zeigt Limit-Warning-Toast; die alten
+   `limit-warning`-Listener (Emit) entfallen.
 
 ## Autostart-Eintrag (konkret)
 
