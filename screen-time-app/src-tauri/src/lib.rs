@@ -428,8 +428,8 @@ fn poll_events(state: State<'_, AppState>, after_id: i64) -> Result<Vec<TrackedE
             })
         })
         .map_err(|e| e.to_string())?
-        .flatten()
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
     if let Some(max_id) = events.last().map(|e| e.id) {
         conn.execute("DELETE FROM events WHERE id <= ?1", params![max_id])
             .map_err(|e| e.to_string())?;

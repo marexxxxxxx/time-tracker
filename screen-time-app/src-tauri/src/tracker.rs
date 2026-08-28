@@ -61,7 +61,6 @@ pub fn start_window_tracking<W>(
     W: Fn(String, String, i64) + Send + 'static,
 {
     tokio::spawn(async move {
-        let on_limit_warning = on_limit_warning;
         let mut interval = interval(Duration::from_secs(3));
         let mut current_window: Option<WindowInfo> = None;
         let mut current_start = Utc::now();
@@ -94,6 +93,8 @@ pub fn start_window_tracking<W>(
                 }
 
                 // Check time limits before recording
+                let mut should_continue = false;
+                let mut warn_decision: Option<(String, String, i64)> = None;
                 if let Ok(db_guard) = conn.lock() {
                     if let Some(db) = db_guard.as_ref() {
                         if let Some(config) = crate::get_app_limit_config(db, &active.app_name) {
@@ -108,33 +109,41 @@ pub fn start_window_tracking<W>(
                                     config.weekly_limit_minutes,
                                 ) {
                                     LimitDecision::Block(_) => {
-                                        // Limit exceeded — block the app
-                                        if !active.title.contains(BLOCKED_TITLE_MARKER) {
-                                            let active_clone = active.clone();
-                                            let st = session_type.clone();
-                                            tokio::task::spawn_blocking(move || {
-                                                handle_blocked_app(&active_clone, &st);
-                                            });
-                                        }
-                                        current_window = None;
-                                        current_id = None;
-                                        warned_apps.remove(&active.app_name);
-                                        continue;
+                                        should_continue = true;
                                     }
                                     LimitDecision::Warn { limit_type, remaining_minutes } => {
-                                        if !warned_apps.contains(&active.app_name) {
-                                            warned_apps.insert(active.app_name.clone());
-                                            on_limit_warning(
-                                                active.app_name.clone(),
-                                                limit_type,
-                                                remaining_minutes,
-                                            );
-                                        }
+                                        warn_decision = Some((
+                                            active.app_name.clone(),
+                                            limit_type,
+                                            remaining_minutes,
+                                        ));
                                     }
                                     LimitDecision::Ok => {}
                                 }
                             }
                         }
+                    }
+                }
+
+                if should_continue {
+                    // Limit exceeded — block the app
+                    if !active.title.contains(BLOCKED_TITLE_MARKER) {
+                        let active_clone = active.clone();
+                        let st = session_type.clone();
+                        tokio::task::spawn_blocking(move || {
+                            handle_blocked_app(&active_clone, &st);
+                        });
+                    }
+                    current_window = None;
+                    current_id = None;
+                    warned_apps.remove(&active.app_name);
+                    continue;
+                }
+
+                if let Some((warn_app, limit_type, remaining_minutes)) = warn_decision {
+                    if !warned_apps.contains(&warn_app) {
+                        warned_apps.insert(warn_app.clone());
+                        on_limit_warning(warn_app, limit_type, remaining_minutes);
                     }
                 }
 

@@ -182,9 +182,11 @@ do_build() {
 
     # Install daemon binary
     local daemon_bin="$APP_DIR/src-tauri/target/release/$DAEMON_NAME"
+    local daemon_installed=0
     if [ -f "$daemon_bin" ]; then
         cp "$daemon_bin" "$LOCAL_BIN_DAEMON"
         chmod +x "$LOCAL_BIN_DAEMON"
+        daemon_installed=1
         ok "Daemon installed to $LOCAL_BIN_DAEMON"
     else
         warn "Daemon binary not found at $daemon_bin; skipping daemon install"
@@ -203,7 +205,9 @@ do_build() {
     create_desktop_entry "$LOCAL_BIN_APP"
 
     # Autostart entry for background daemon
-    create_autostart_entry
+    if [ "$daemon_installed" -eq 1 ]; then
+        create_autostart_entry
+    fi
 
     echo ""
     ok "Installation complete!"
