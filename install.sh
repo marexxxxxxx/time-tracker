@@ -138,10 +138,23 @@ EOF
 remove_desktop_entry() {
     rm -f "$DESKTOP_FILE" "$ICON_DEST" "$LOCAL_BIN_APP" "$LOCAL_BIN_DAEMON"
     rm -f "$HOME/.config/autostart/screen-time-daemon.desktop"
+
+    # Remove the Hyprland autostart line if present
+    local hypr_autostart="$HOME/.config/hypr/autostart.conf"
+    if [ -f "$hypr_autostart" ]; then
+        local marker="# Screen Time Daemon autostart (install.sh)"
+        local tmp
+        tmp=$(mktemp)
+        grep -vF "$marker" "$hypr_autostart" \
+            | grep -vF "exec-once = $LOCAL_BIN_DAEMON" > "$tmp" || true
+        mv "$tmp" "$hypr_autostart"
+    fi
+
     ok "Desktop entry, icon, daemon, and autostart entry removed"
 }
 
 create_autostart_entry() {
+    # XDG autostart (works on GNOME/X11; ignored by Hyprland)
     local entry_dir="$HOME/.config/autostart"
     mkdir -p "$entry_dir"
     cat > "$entry_dir/screen-time-daemon.desktop" <<EOF
@@ -153,6 +166,21 @@ Terminal=false
 X-GNOME-Autostart-enabled=true
 EOF
     ok "Autostart entry created at $entry_dir/screen-time-daemon.desktop"
+
+    # Hyprland autostart (Option A): Hyprland does not read XDG autostart.
+    # Add an exec-once line only when a Hyprland config is present.
+    local hypr_conf="$HOME/.config/hypr/hyprland.conf"
+    if [ -f "$hypr_conf" ]; then
+        local hypr_autostart="$HOME/.config/hypr/autostart.conf"
+        mkdir -p "$HOME/.config/hypr"
+        local marker="# Screen Time Daemon autostart (install.sh)"
+        if ! grep -qF "$marker" "$hypr_autostart" 2>/dev/null; then
+            printf '\n%s\nexec-once = %s\n' "$marker" "$LOCAL_BIN_DAEMON" >> "$hypr_autostart"
+            ok "Hyprland autostart added to $hypr_autostart"
+        else
+            info "Hyprland autostart already present in $hypr_autostart"
+        fi
+    fi
 }
 
 # --- Build Mode ---
